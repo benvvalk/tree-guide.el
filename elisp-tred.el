@@ -19,26 +19,6 @@
 (defun elisp-tred--leaf-node-p (treesit-node)
   (equal (treesit-node-type treesit-node) "symbol"))
 
-(defun elisp-tred--insert-treesit-node (treesit-node indent-by)
-  (when (<= indent-by 3) ;; dev plan: test/debug a single level, then two levels, then all levels
-    (let* ((indent-size (* indent-by elisp-tred-indent-size))
-           (indent-string (make-string indent-size ?\s)))
-      (insert indent-string)
-      (if (elisp-tred--leaf-node-p treesit-node)
-          (insert (concat (treesit-node-text treesit-node) "\n"))
-        (let* ((children (treesit-node-children treesit-node t))
-               (first-child (car children))
-               (tail-children (cdr children)))
-          (insert "(")
-          (if first-child
-              (if (elisp-tred--leaf-node-p first-child)
-                  (elisp-tred--insert-treesit-node first-child 0)
-                (insert "\n")
-                (elisp-tred--insert-treesit-node first-child (1+ indent-by)))
-            (insert ")\n"))
-          (dolist (child tail-children)
-            (elisp-tred--insert-treesit-node child (1+ indent-by))))))))
-
 (defun elisp-tred-refresh-tree-buffer ()
   (interactive)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
@@ -46,7 +26,7 @@
       (let ((inhibit-read-only t))
         (erase-buffer)
         (dolist (toplevel-list-node (treesit-node-children root-node))
-          (elisp-tred--insert-treesit-node toplevel-list-node 0))))))
+          (elisp-tred--render-tree toplevel-list-node 0))))))
 
 (defun elisp-tred--enable ()
   (message "enabling elisp-tred")
