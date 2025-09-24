@@ -39,6 +39,18 @@
   (when (buffer-live-p elisp-tred--tree-buffer)
     (kill-buffer elisp-tred--tree-buffer)))
 
+(defun elisp-tred-refresh-tree-buffer ()
+  (interactive)
+  (let ((root-node (treesit-buffer-root-node 'elisptred)))
+    (with-current-buffer elisp-tred--tree-buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (let ((top-level-forms (elisp-tred--get-relevant-children root-node)))
+          (dotimes (i (length top-level-forms))
+            (let ((form (nth i top-level-forms))
+                  (is-last (= i (1- (length top-level-forms)))))
+              (elisp-tred--render-tree form nil is-last))))))))
+
 (defun elisp-tred--leaf-node-p (treesit-node)
   (equal (treesit-node-type treesit-node) "symbol"))
 
@@ -110,15 +122,3 @@
               (let ((child (nth i children))
                     (is-last-child (= i (1- child-count))))
                 (elisp-tred--render-tree child child-prefix is-last-child)))))))))))
-
-(defun elisp-tred-refresh-tree-buffer ()
-  (interactive)
-  (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (with-current-buffer elisp-tred--tree-buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (let ((top-level-forms (elisp-tred--get-relevant-children root-node)))
-          (dotimes (i (length top-level-forms))
-            (let ((form (nth i top-level-forms))
-                  (is-last (= i (1- (length top-level-forms)))))
-              (elisp-tred--render-tree form nil is-last))))))))
