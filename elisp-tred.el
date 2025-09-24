@@ -64,13 +64,14 @@
 (defun elisp-tred--render-tree (node &optional prefix is-last)
   "Render NODE as a tree with PREFIX and connection status IS-LAST."
   (let* ((children (elisp-tred--get-relevant-children node))
+         (is-root (null prefix))
          (is-leaf (elisp-tred--leaf-node-p node))
          (connector (cond
-                     ((null prefix) "╭─")
+                     (is-root "╭─")
                      (is-last "╰─")
                      (t "├─")))
          (child-prefix (concat prefix (cond
-                                       ((null prefix) "")
+                                       (is-root "")
                                        (is-last "  ")
                                        (t "│ ")))))
 
@@ -94,7 +95,7 @@
 
          ;; First child is leaf with other children - show with branching (except for root)
          ((elisp-tred--leaf-node-p first-child)
-          (if (null prefix)
+          (if is-root
               ;; Root level - show function name inline
               (progn
                 (insert " " (treesit-node-text first-child t) "\n")
