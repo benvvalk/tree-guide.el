@@ -66,7 +66,7 @@
 (defun elisp-tred--expander (widget)
   (let ((node (widget-get widget :treesit-node)))
     (mapcar 'elisp-tred--get-tree-widget
-            (treesit-node-children node))))
+            (elisp-tred--get-children node))))
 
 (defun elisp-tred-refresh-tree-buffer ()
   (interactive)
@@ -79,9 +79,9 @@
 (defun elisp-tred--leaf-node-p (treesit-node)
   (equal (treesit-node-type treesit-node) "symbol"))
 
-(defun elisp-tred--get-relevant-children (node)
+(defun elisp-tred--get-children (node)
   "Get children of NODE, filtering out parentheses and other structural elements."
   (seq-filter (lambda (child)
                 (let ((type (treesit-node-type child)))
-                  (not (member type '("(" ")" "\n" " ")))))
+                  (not (member type '("(")))))
               (treesit-node-children node)))
