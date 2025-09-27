@@ -47,10 +47,18 @@
               (_ ""))
             (format " [%s]" node-type))))
 
+(defun elisp-tred--get-label (node)
+  (let ((node-type (treesit-node-type node)))
+    (concat (pcase node-type
+              ("list" "(")
+              ("symbol" (treesit-node-text node))
+              (")" ")"))
+            (format " [%s]" node-type))))
+
 (defun elisp-tred--get-tree-widget (node)
   `(tree-widget
     :node (push-button
-           :tag ,(treesit-node-type node)
+           :tag ,(elisp-tred--get-label node)
            :format "%[%t%]\n")
     :treesit-node ,node
     :expander elisp-tred--expander))
