@@ -39,17 +39,34 @@
   (when (buffer-live-p elisp-tred--tree-buffer)
     (kill-buffer elisp-tred--tree-buffer)))
 
+(defun elisp-tred--get-label (node)
+  (let ((node-type (treesit-node-type node)))
+    (concat (pcase node-type
+              ("list" "(")
+              ("symbol" (treesit-node-text node))
+              (_ ""))
+            (format " [%s]" node-type))))
+
+(defun elisp-tred--get-tree-widget (node)
+  `(tree-widget
+    :node (push-button
+           :tag ,(treesit-node-type node)
+           :format "%[%t%]\n")
+    :treesit-node ,node
+    :expander elisp-tred--expander))
+
+(defun elisp-tred--expander (widget)
+  (let ((node (widget-get widget :treesit-node)))
+    (mapcar 'elisp-tred--get-tree-widget
+            (treesit-node-children node))))
+
 (defun elisp-tred-refresh-tree-buffer ()
   (interactive)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
     (with-current-buffer elisp-tred--tree-buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (let ((top-level-forms (elisp-tred--get-relevant-children root-node)))
-          (dotimes (i (length top-level-forms))
-            (let ((form (nth i top-level-forms))
-                  (is-last (= i (1- (length top-level-forms)))))
-              (elisp-tred--render-tree form nil is-last))))))))
+		(widget-create (elisp-tred--get-tree-widget root-node))))))
 
 (defun elisp-tred--leaf-node-p (treesit-node)
   (equal (treesit-node-type treesit-node) "symbol"))
@@ -60,66 +77,3 @@
                 (let ((type (treesit-node-type child)))
                   (not (member type '("(" ")" "\n" " ")))))
               (treesit-node-children node)))
-
-(defun elisp-tred--render-tree (node &optional prefix is-last)
-  "Render NODE as a tree with PREFIX and connection status IS-LAST."
-  (let* ((children (elisp-tred--get-relevant-children node))
-         (is-root (null prefix))
-         (is-leaf (elisp-tred--leaf-node-p node))
-         (connector (cond
-                     (is-root "╭─")
-                     (is-last "╰─")
-                     (t "├─")))
-         (child-prefix (concat prefix (cond
-                                       (is-root "")
-                                       (is-last "  ")
-                                       (t "│ ")))))
-
-    (cond
-     ;; For leaf nodes (symbols), just render the symbol
-     (is-leaf
-      (when prefix (insert prefix))
-      (insert connector " " (treesit-node-text node t) "\n"))
-
-     ;; For list nodes, don't render the list text, just process children
-     ((> (length children) 0)
-      (when prefix (insert prefix))
-      (insert connector)
-      ;; Handle list structure properly
-      (let ((first-child (car children))
-            (rest-children (cdr children)))
-        (cond
-         ;; Single leaf child - show inline without branching
-         ((and (= (length children) 1) (elisp-tred--leaf-node-p first-child))
-          (insert " " (treesit-node-text first-child t) "\n"))
-
-         ;; First child is leaf with other children - show with branching (except for root)
-         ((elisp-tred--leaf-node-p first-child)
-          (if is-root
-              ;; Root level - show function name inline
-              (progn
-                (insert " " (treesit-node-text first-child t) "\n")
-                (when rest-children
-                  (let ((child-count (length rest-children)))
-                    (dotimes (i child-count)
-                      (let ((child (nth i rest-children))
-                            (is-last-child (= i (1- child-count))))
-                        (elisp-tred--render-tree child child-prefix is-last-child))))))
-            ;; Non-root level - show with branching
-            (progn
-              (insert "┬─ " (treesit-node-text first-child t) "\n")
-              (when rest-children
-                (let ((child-count (length rest-children)))
-                  (dotimes (i child-count)
-                    (let ((child (nth i rest-children))
-                          (is-last-child (= i (1- child-count))))
-                      (elisp-tred--render-tree child child-prefix is-last-child))))))))
-
-         ;; First child is not a leaf - full branching
-         (t
-          (insert "┬─\n")
-          (let ((child-count (length children)))
-            (dotimes (i child-count)
-              (let ((child (nth i children))
-                    (is-last-child (= i (1- child-count))))
-                (elisp-tred--render-tree child child-prefix is-last-child)))))))))))
