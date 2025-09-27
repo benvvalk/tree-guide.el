@@ -59,6 +59,7 @@
   `(tree-widget
     :node (push-button
            :tag ,(elisp-tred--get-label node)
+           :button-face 'default
            :format "%[%t%]\n")
     :treesit-node ,node
     :expander elisp-tred--expander))
