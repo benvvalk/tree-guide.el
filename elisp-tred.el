@@ -42,15 +42,7 @@
 (defun elisp-tred--get-label (node)
   (let ((node-type (treesit-node-type node)))
     (concat (pcase node-type
-              ("list" "(")
-              ("symbol" (treesit-node-text node))
-              (_ ""))
-            (format " [%s]" node-type))))
-
-(defun elisp-tred--get-label (node)
-  (let ((node-type (treesit-node-type node)))
-    (concat (pcase node-type
-              ("list" "(")
+              ("list" "collapsed")
               ("symbol" (treesit-node-text node))
               (")" ")"))
             (format " [%s]" node-type))))
