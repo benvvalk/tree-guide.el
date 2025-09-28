@@ -28,7 +28,7 @@
   (unless (buffer-live-p elisp-tred--tree-buffer)
     (setq-local elisp-tred--tree-buffer
                 (get-buffer-create
-                 (format "*elisp-tred buffer for %s"
+                 (format "*elisp-tred: %s*"
                          (buffer-name))))
     (with-current-buffer elisp-tred--tree-buffer
       (elisp-tred--tree-mode)
