@@ -53,14 +53,35 @@ depending on whether the node is collapsed or expanded."
     (when t ;(eq node-type "list")
       (let* ((button (widget-get widget :node))
              (open (widget-get widget :open))
-             (new-label (if open "expanded!" "collapsed")))
-        (widget-put button :tag new-label)))))
+             (new-label (if open
+                            (elisp-tred--get-expanded-label node)
+                          (elisp-tred--get-collapsed-label node))))
+        (widget-put button :tag new-label)
+        ;; HACK: I don't understand what the line below does, but it's
+        ;; necessary in order for the tree widget label to be updated.
+        (widget-value-set widget open)))))
 
-(defun elisp-tred--get-label (node)
+(defun elisp-tred--remove-newlines-and-collapse-spaces (str)
+  "Remove all newlines and collapse duplicate spaces in STR."
+  (let ((no-newlines (replace-regexp-in-string "\n" " " str)))
+    (replace-regexp-in-string "\\s-+" " " no-newlines)))
+
+(defun elisp-tred--get-expanded-label (node)
+  "Return the text label for a treesit node (NODE) when
+it is expanded."
   (let ((node-type (treesit-node-type node)))
     (concat (pcase node-type
               ("symbol" (treesit-node-text node))
-              (")" ")"))
+              (_ "("))
+            (format " [%s]" node-type))))
+
+(defun elisp-tred--get-collapsed-label (node)
+  "Return the text label for a treesit node (NODE) when
+it is collapsed."
+  (let ((node-type (treesit-node-type node)))
+    (concat (pcase node-type
+              ("symbol" (treesit-node-text node))
+              (_ (elisp-tred--remove-newlines-and-collapse-spaces (treesit-node-text node))))
             (format " [%s]" node-type))))
 
 (defun elisp-tred--get-tree-widget (node)
@@ -71,7 +92,7 @@ The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
   `(tree-widget
     :node (push-button
-           :tag ,(elisp-tred--get-label node)
+           :tag ,(elisp-tred--get-collapsed-label node)
            :button-face default
            :format "%[%t%]\n")
     :treesit-node ,node
