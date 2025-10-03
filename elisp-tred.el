@@ -7,6 +7,15 @@
 
 (defvar-local elisp-tred--tree-buffer nil)
 
+(defvar-local elisp-tred-max-label-length 128
+  "The maximum length of a tree node label. For the sake of
+performance, labels longer than this length will be truncated with an
+ellipsis (\"...\").
+
+It is important to impose a max length on the tree node labels because
+when a node is collapsed, it shows the full lisp code for its subtree
+in a single line, which can be very long indeed.")
+
 (define-minor-mode elisp-tred-mode
   "Minor mode for Elisp tree editing."
   :lighter "ET"
@@ -78,11 +87,12 @@ it is expanded."
 (defun elisp-tred--get-collapsed-label (node)
   "Return the text label for a treesit node (NODE) when
 it is collapsed."
-  (let ((node-type (treesit-node-type node)))
-    (concat (pcase node-type
-              ("symbol" (treesit-node-text node))
-              (_ (elisp-tred--remove-newlines-and-collapse-spaces (treesit-node-text node))))
-            (format " [%s]" node-type))))
+  (let* ((label (treesit-node-text node))
+         (truncated (> (length label) elisp-tred-max-label-length))
+         (label (if truncated (substring label 0 elisp-tred-max-label-length) label))
+         (label (if truncated (concat label "...") label))
+         (label (elisp-tred--remove-newlines-and-collapse-spaces label)))
+    (concat label (format " [%s]" (treesit-node-type node)))))
 
 (defun elisp-tred--get-tree-widget (node)
   "Return the tree widget definition corresponding to treesit node
