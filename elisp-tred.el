@@ -101,10 +101,7 @@ NODE.
 The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
   `(tree-widget
-    :node (push-button
-           :tag ,(elisp-tred--get-collapsed-label node)
-           :button-face default
-           :format "%[%t%]\n")
+    :node (item :tag ,(elisp-tred--get-collapsed-label node))
     :treesit-node ,node
     :expander elisp-tred--get-child-widgets))
 
