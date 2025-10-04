@@ -24,7 +24,8 @@ in a single line, which can be very long indeed.")
     (elisp-tred--kill-tree-buffer)))
 
 (defvar-keymap elisp-tred--tree-mode-map
- "TAB" #'elisp-tred-toggle-node)
+  "TAB" #'elisp-tred-toggle-node
+  "<backtab>" #'elisp-tred-collapse-parent)
 
 (define-derived-mode elisp-tred--tree-mode special-mode
   "TM"
@@ -55,17 +56,32 @@ in a single line, which can be very long indeed.")
   (when (buffer-live-p elisp-tred--tree-buffer)
     (kill-buffer elisp-tred--tree-buffer)))
 
-(defun elisp-tred-toggle-node ()
-  "Toggle the expanded/collapsed state of the tree node on the current
-line."
-  (interactive)
+(defun elisp-tred--get-icon-widget-for-current-line ()
   (save-excursion
     (beginning-of-line)
     (let ((line-number (line-number-at-pos (point))))
       (unless (widget-at (point)) (widget-forward 1))
       (when (and (widget-at (point))
                  (equal line-number (line-number-at-pos (point))))
-		(widget-button-press (point))))))
+		(widget-at (point))))))
+
+(defun elisp-tred-toggle-node ()
+  "Toggle the expanded/collapsed state of the tree node on the current
+line."
+  (interactive)
+  (when-let* ((icon-widget (elisp-tred--get-icon-widget-for-current-line))
+              (pos (widget-get icon-widget :from)))
+    (widget-button-press pos)))
+
+(defun elisp-tred-collapse-parent ()
+  "Move up to the parent tree node (if any) and collapse it."
+  (interactive)
+  (when-let* ((icon-widget (elisp-tred--get-icon-widget-for-current-line))
+              (tree-widget (widget-get icon-widget :parent))
+              (parent-tree-widget (widget-get tree-widget :parent))
+              (pos (widget-get parent-tree-widget :from)))
+    (goto-char pos)
+    (widget-button-press pos)))
 
 (defun elisp-tred--update-label (widget)
   "Update the text label for the given tree node WIDGET.
