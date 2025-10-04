@@ -23,6 +23,9 @@ in a single line, which can be very long indeed.")
       (elisp-tred--enable)
     (elisp-tred--kill-tree-buffer)))
 
+(defvar-keymap elisp-tred--tree-mode-map
+ "TAB" #'elisp-tred-toggle-node)
+
 (define-derived-mode elisp-tred--tree-mode special-mode
   "TM"
   "Mode for displaying lisp code as a tree."
@@ -51,6 +54,18 @@ in a single line, which can be very long indeed.")
 (defun elisp-tred--kill-tree-buffer ()
   (when (buffer-live-p elisp-tred--tree-buffer)
     (kill-buffer elisp-tred--tree-buffer)))
+
+(defun elisp-tred-toggle-node ()
+  "Toggle the expanded/collapsed state of the tree node on the current
+line."
+  (interactive)
+  (save-excursion
+    (beginning-of-line)
+    (let ((line-number (line-number-at-pos (point))))
+      (unless (widget-at (point)) (widget-forward 1))
+      (when (and (widget-at (point))
+                 (equal line-number (line-number-at-pos (point))))
+		(widget-button-press (point))))))
 
 (defun elisp-tred--update-label (widget)
   "Update the text label for the given tree node WIDGET.
@@ -103,6 +118,21 @@ collapsible UI widget in the tree buffer."
   `(tree-widget
     :node (item :tag ,(elisp-tred--get-collapsed-label node))
     :treesit-node ,node
+    ;; Below, we explicitly set the keymaps for the tree icon widgets,
+    ;; so that they are the same as the default keymap for the mode
+    ;; (i.e. `elisp-tred--tree-mode-map').
+    ;;
+    ;; This ensures that the keybindings work consistently, regardless
+    ;; of where the cursor happens to be positioned on the current
+    ;; line.
+    ;;
+    ;; For example, I want to ensure that the TAB key always works to
+    ;; toggle the expanded/collapsed state of the node on the current
+    ;; line.
+    :open-icon (tree-widget-open-icon :keymap elisp-tred--tree-mode-map)
+    :close-icon (tree-widget-close-icon :keymap elisp-tred--tree-mode-map)
+    :empty-icon (tree-widget-empty-icon :keymap elisp-tred--tree-mode-map)
+    :leaf-icon (tree-widget-leaf-icon :keymap elisp-tred--tree-mode-map)
     :expander elisp-tred--get-child-widgets))
 
 (defun elisp-tred--get-child-widgets (widget)
