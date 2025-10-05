@@ -158,7 +158,23 @@ three)'), then option 1 is more readable (in the author's opinion)."
 it is expanded."
   (let ((num-children-in-label (elisp-tred--get-num-children-in-expanded-label node)))
     (concat (elisp-tred--get-text-for-child-range node 0 (1+ num-children-in-label))
-            (format " [%s]" node-type))))
+            ;; (format " [%s]" node-type)
+            )))
+
+(defun elisp-tred--calc-number-of-closing-parens (node)
+  "Calculate the number of closing parens (`)') that we need
+to append to the label for treesit node NODE, in order to balance
+open parens (`(') in parent and ancestor nodes.
+
+Note that it is only necessary to append closing parens if If NODE is
+the last child of it's parent node (and so on recursively up the
+tree). If NODE is not the last child of its parent, we always return
+0."
+  (if (elisp-tred--is-last-child node)
+      (if-let* ((parent (treesit-node-parent node)))
+          (1+ (elisp-tred--calc-number-of-closing-parens parent))
+        1)
+      0))
 
 (defun elisp-tred--get-collapsed-label (node)
   "Return the text label for a treesit node (NODE) when
@@ -167,8 +183,12 @@ it is collapsed."
          (truncated (> (length label) elisp-tred-max-label-length))
          (label (if truncated (substring label 0 elisp-tred-max-label-length) label))
          (label (if truncated (concat label "...") label))
-         (label (elisp-tred--remove-newlines-and-collapse-spaces label)))
-    (concat label (format " [%s]" (treesit-node-type node)))))
+         (label (elisp-tred--remove-newlines-and-collapse-spaces label))
+         (num-closing-parens (elisp-tred--calc-number-of-closing-parens node)))
+    (concat label
+            (make-string num-closing-parens ?\))
+            ;; (format " [%s]" (treesit-node-type node))
+            )))
 
 (defun elisp-tred--get-tree-widget (node)
   "Return the tree widget definition corresponding to treesit node
@@ -196,6 +216,14 @@ collapsible UI widget in the tree buffer."
     :leaf-icon (tree-widget-leaf-icon :keymap elisp-tred--tree-mode-map)
     :expander elisp-tred--get-child-widgets))
 
+(defun elisp-tred--is-last-child (node)
+  (when-let* ((parent (treesit-node-parent node))
+              (num-children (treesit-node-child-count parent))
+              (child-index (treesit-node-index node)))
+    ;; Note: We're subtracting 2 here because the true
+    ;; last child is the literal closing paren `)'.
+    (eql child-index (- num-children 2))))
+
 (defun elisp-tred--get-child-widgets (widget)
   "Get the widget definitions for the children of the given tree node
 WIDGET.
@@ -222,7 +250,7 @@ This function is called when expanding a tree node in the UI."
   "Get children of NODE, filtering out parentheses and other structural elements."
   (seq-filter (lambda (child)
                 (let ((type (treesit-node-type child)))
-                  (not (member type '("(")))))
+                  (not (member type '("(" ")")))))
               (treesit-node-children node)))
 
 (provide 'elisp-tred)
