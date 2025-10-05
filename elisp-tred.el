@@ -106,13 +106,58 @@ depending on whether the node is collapsed or expanded."
   (let ((no-newlines (replace-regexp-in-string "\n" " " str)))
     (replace-regexp-in-string "\\s-+" " " no-newlines)))
 
+(defun elisp-tred--get-text-for-child-range (node index count)
+  "Get the source code text that corresponds to COUNT
+consecutive child nodes of treesit NODE, starting at child index
+INDEX."
+  (let* ((children (treesit-node-children node))
+         (index (min index (1- (length children))))
+         (count (min count (length children)))
+         (start-child (nth index children))
+         (end-child (nth (1- (+ index count)) children))
+         (start-pos (treesit-node-start start-child))
+         (end-pos (treesit-node-end end-child)))
+    (with-current-buffer (treesit-node-buffer node)
+      (elisp-tred--remove-newlines-and-collapse-spaces
+       (buffer-substring start-pos end-pos)))))
+
+(defun elisp-tred--get-num-children-in-expanded-label (node)
+  "Get the number of initial children that should be included within
+the label for treesit node NODE, instead of being created as separate
+child node widgets.
+
+As a simple example, let us suppose that NODE correponds to the list
+`(one two three)'.
+
+If this function returns 0, it means the subtree for NODE should be
+rendered as follows:
+
+[-] (
+ |- one
+ |- two
+ |- three)
+
+On the other, if this function returns 1, it means the subtree for
+NODE should be rendered as:
+
+[-] (one
+ |- two
+ |- three)
+
+The second option above is generally more readable and concise, but in
+the case where the first child of NODE is a list (e.g. `((one) two
+three)'), then option 1 is more readable (in the author's opinion)."
+  (when-let* ((node-type (treesit-node-type node))
+              ;; Note: We skip child 0 because it is a "(" literal.
+              (child (nth 1 (treesit-node-children node)))
+              (child-type (treesit-node-type child)))
+    (if (equal child-type "list") 0 1)))
+
 (defun elisp-tred--get-expanded-label (node)
   "Return the text label for a treesit node (NODE) when
 it is expanded."
-  (let ((node-type (treesit-node-type node)))
-    (concat (pcase node-type
-              ("symbol" (treesit-node-text node))
-              (_ "("))
+  (let ((num-children-in-label (elisp-tred--get-num-children-in-expanded-label node)))
+    (concat (elisp-tred--get-text-for-child-range node 0 (1+ num-children-in-label))
             (format " [%s]" node-type))))
 
 (defun elisp-tred--get-collapsed-label (node)
@@ -156,9 +201,11 @@ collapsible UI widget in the tree buffer."
 WIDGET.
 
 This function is called when expanding a tree node in the UI."
-  (let ((node (widget-get widget :treesit-node)))
+  (let* ((node (widget-get widget :treesit-node))
+         (num-children-in-label (elisp-tred--get-num-children-in-expanded-label node)))
     (mapcar 'elisp-tred--get-tree-widget
-            (elisp-tred--get-children node))))
+            ;; skip children that already shown within label of parent node
+            (nthcdr num-children-in-label (elisp-tred--get-children node)))))
 
 (defun elisp-tred-refresh-tree-buffer ()
   (interactive)
