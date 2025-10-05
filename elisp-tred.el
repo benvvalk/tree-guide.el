@@ -177,3 +177,5 @@ This function is called when expanding a tree node in the UI."
                 (let ((type (treesit-node-type child)))
                   (not (member type '("(")))))
               (treesit-node-children node)))
+
+(provide 'elisp-tred)
