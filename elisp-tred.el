@@ -196,25 +196,27 @@ NODE.
 
 The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
-  `(tree-widget
-    :node (item :tag ,(elisp-tred--get-collapsed-label node))
-    :treesit-node ,node
-    ;; Below, we explicitly set the keymaps for the tree icon widgets,
-    ;; so that they are the same as the default keymap for the mode
-    ;; (i.e. `elisp-tred--tree-mode-map').
-    ;;
-    ;; This ensures that the keybindings work consistently, regardless
-    ;; of where the cursor happens to be positioned on the current
-    ;; line.
-    ;;
-    ;; For example, I want to ensure that the TAB key always works to
-    ;; toggle the expanded/collapsed state of the node on the current
-    ;; line.
-    :open-icon (tree-widget-open-icon :keymap elisp-tred--tree-mode-map)
-    :close-icon (tree-widget-close-icon :keymap elisp-tred--tree-mode-map)
-    :empty-icon (tree-widget-empty-icon :keymap elisp-tred--tree-mode-map)
-    :leaf-icon (tree-widget-leaf-icon :keymap elisp-tred--tree-mode-map)
-    :expander elisp-tred--get-child-widgets))
+  (if (eql (treesit-node-child-count node) 0)
+	  `(item :tag ,(elisp-tred--get-collapsed-label node))
+    `(tree-widget
+      :node (item :tag ,(elisp-tred--get-collapsed-label node))
+      :treesit-node ,node
+      ;; Below, we explicitly set the keymaps for the tree icon widgets,
+      ;; so that they are the same as the default keymap for the mode
+      ;; (i.e. `elisp-tred--tree-mode-map').
+      ;;
+      ;; This ensures that the keybindings work consistently, regardless
+      ;; of where the cursor happens to be positioned on the current
+      ;; line.
+      ;;
+      ;; For example, I want to ensure that the TAB key always works to
+      ;; toggle the expanded/collapsed state of the node on the current
+      ;; line.
+      :open-icon (tree-widget-open-icon :keymap elisp-tred--tree-mode-map)
+      :close-icon (tree-widget-close-icon :keymap elisp-tred--tree-mode-map)
+      :empty-icon (tree-widget-empty-icon :keymap elisp-tred--tree-mode-map)
+      :leaf-icon (tree-widget-leaf-icon :glyph-name "handle" :keymap elisp-tred--tree-mode-map)
+      :expander elisp-tred--get-child-widgets)))
 
 (defun elisp-tred--is-last-child (node)
   (when-let* ((parent (treesit-node-parent node))
@@ -242,9 +244,6 @@ This function is called when expanding a tree node in the UI."
       (let ((inhibit-read-only t))
         (erase-buffer)
 		(widget-create (elisp-tred--get-tree-widget root-node))))))
-
-(defun elisp-tred--leaf-node-p (treesit-node)
-  (equal (treesit-node-type treesit-node) "symbol"))
 
 (defun elisp-tred--get-children (node)
   "Get children of NODE, filtering out parentheses and other structural elements."
