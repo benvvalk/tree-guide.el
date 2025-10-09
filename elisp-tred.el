@@ -52,6 +52,57 @@ in a single line, which can be very long indeed.")
   (display-buffer elisp-tred--tree-buffer)
   (elisp-tred-refresh-tree-buffer))
 
+
+(defun elisp-tred--get-toplevel-treesit-node (node)
+  "Return the treesit node for the top-level form that contains the
+given treesit node (NODE)."
+  (let* ((parent-node (treesit-node-parent node))
+         (parent-type (treesit-node-type parent-node)))
+    (if (equal parent-type "source_file")
+        node
+      (elisp-tred--get-toplevel-treesit-node parent-node))))
+
+(defun elisp-tred--get-toplevel-form-at-point ()
+  "Return the treesit node for the top-level form that contains
+POINT."
+  (let* ((node (treesit-node-at (point))))
+    (elisp-tred--get-toplevel-treesit-node node)))
+
+(defun elisp-tred-jump-to-tree ()
+  "Open elisp-tred buffer and show tree for current top-level elisp
+form surrounding POINT."
+  (interactive)
+  (unless (treesit-available-p)
+    (user-error "Emacs was not built with tree-sitter support"))
+  (unless (treesit-language-available-p 'elisptred)
+    (user-error "Missing tree-sitter grammar for elisptred"))
+  (unless (treesit-ready-p 'elisptred)
+    (user-error "Failed to load treesit with elisptred grammar (buffer too large?)"))
+  ;; Note: Passing `t' to `treesit-parser-create' forces Emacs to
+  ;; recreate the parser from the latest tree-sitter grammar library
+  ;; on disk (e.g. `~/.emacs.d/tree-sitter/libtree-sitter-elisptred.so' on
+  ;; Linux). The default behaviour is to reuse the parser for the
+  ;; buffer if it already exists, which caused me *a lot* of confusion
+  ;; during development, because my grammar changes wouldn't take
+  ;; effect until I restarted emacs.
+  (treesit-parser-create 'elisptred (current-buffer) t)
+  (when-let* ((tree-buffer (get-buffer-create "*elisp-tred*"))
+              (pos (point))
+              (root-node (elisp-tred--get-toplevel-form-at-point)))
+    (with-current-buffer tree-buffer
+      (elisp-tred--tree-mode)
+      ;; Register a callback to update the labels of certain tree
+      ;; nodes, when they are expanded or collapsed.
+      (setq-local tree-widget-after-toggle-functions
+                  '(elisp-tred--update-label))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (widget-create (elisp-tred--get-tree-widget root-node))))
+    ;; Default to displaying the tree buffer in the same window as the
+    ;; elisp source buffer, unless the user overrides it in their
+    ;; `display-buffer-alist'.
+    (display-buffer tree-buffer '(display-buffer-same-window))))
+
 (defun elisp-tred--kill-tree-buffer ()
   (when (buffer-live-p elisp-tred--tree-buffer)
     (kill-buffer elisp-tred--tree-buffer)))
