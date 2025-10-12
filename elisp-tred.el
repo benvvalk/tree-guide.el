@@ -68,10 +68,7 @@ POINT."
   (let* ((node (treesit-node-at (point))))
     (elisp-tred--get-toplevel-treesit-node node)))
 
-(defun elisp-tred-jump-to-tree ()
-  "Open elisp-tred buffer and show tree for current top-level elisp
-form surrounding POINT."
-  (interactive)
+(defun elisp-tred--treesit-init ()
   (unless (treesit-available-p)
     (user-error "Emacs was not built with tree-sitter support"))
   (unless (treesit-language-available-p 'elisptred)
@@ -85,7 +82,13 @@ form surrounding POINT."
   ;; buffer if it already exists, which caused me *a lot* of confusion
   ;; during development, because my grammar changes wouldn't take
   ;; effect until I restarted emacs.
-  (treesit-parser-create 'elisptred (current-buffer) t)
+  (treesit-parser-create 'elisptred (current-buffer) t))
+
+(defun elisp-tred-jump-to-tree ()
+  "Open elisp-tred buffer and show tree for current top-level elisp
+form surrounding POINT."
+  (interactive)
+  (elisp-tred--treesit-init)
   (when-let* ((tree-buffer (get-buffer-create "*elisp-tred*"))
               (pos (point))
               (root-node (elisp-tred--get-toplevel-form-at-point)))
