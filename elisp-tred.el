@@ -183,32 +183,13 @@ depending on whether the node is collapsed or expanded."
   (let ((no-newlines (replace-regexp-in-string "\n" " " str)))
     (replace-regexp-in-string "\\s-+" " " no-newlines)))
 
-(defun elisp-tred--get-text-for-child-range (node index count)
-  "Get the source code text that corresponds to COUNT
-consecutive child nodes of treesit NODE, starting at child index
-INDEX."
-  (let* ((children (treesit-node-children node))
-         (index (min index (1- (length children))))
-         (count (min count (length children)))
-         (start-child (nth index children))
-         (end-child (nth (1- (+ index count)) children))
-         (start-pos (treesit-node-start start-child))
-         (end-pos (treesit-node-end end-child)))
-    (with-current-buffer (treesit-node-buffer node)
-      (elisp-tred--remove-newlines-and-collapse-spaces
-       (buffer-substring start-pos end-pos)))))
-
 (defvar elisp-tred--tree-mapping-rules
   `(
 
     (:description "a list"
      :capture-query ((list) @node)
      :capture-nodes-only t
-     :expanded-label "("
-     :child-nodes-fn
-     ,(lambda (captures)
-        (let ((node (car captures)))
-          (treesit-node-children node t))))
+     :expanded-label-fn ,(lambda (captures) "("))
 
     (:description "default rule"
      :capture-query ((_) @node))
@@ -263,45 +244,17 @@ nodes.")
   (when-let* ((node (elisp-tred--treesit-node-at pos)))
     (elisp-tred--get-tree-mapping-rule node)))
 
-(defun elisp-tred--get-num-children-in-expanded-label (node)
-  "Get the number of initial children that should be included within
-the label for treesit node NODE, instead of being created as separate
-child node widgets.
-
-As a simple example, let us suppose that NODE correponds to the list
-`(one two three)'.
-
-If this function returns 0, it means the subtree for NODE should be
-rendered as follows:
-
-[-] (
- |- one
- |- two
- |- three)
-
-On the other, if this function returns 1, it means the subtree for
-NODE should be rendered as:
-
-[-] (one
- |- two
- |- three)
-
-The second option above is generally more readable and concise, but in
-the case where the first child of NODE is a list (e.g. `((one) two
-three)'), then option 1 is more readable (in the author's opinion)."
-  (when-let* ((node-type (treesit-node-type node))
-              ;; Note: We skip child 0 because it is a "(" literal.
-              (child (nth 1 (treesit-node-children node)))
-              (child-type (treesit-node-type child)))
-    (if (equal child-type "list") 0 1)))
-
 (defun elisp-tred--get-expanded-label (node)
   "Return the text label for a treesit node (NODE) when
 it is expanded."
-  (let ((num-children-in-label (elisp-tred--get-num-children-in-expanded-label node)))
-    (concat (elisp-tred--get-text-for-child-range node 0 (1+ num-children-in-label))
-            ;; (format " [%s]" node-type)
-            )))
+  (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
+            (query (plist-get rule :capture-query))
+			(nodes-only (plist-get rule :capture-nodes-only))
+            (pos (treesit-node-start node))
+            (captures (treesit-query-capture node query pos (1+ pos) nodes-only))
+            (label-fn (plist-get rule :expanded-label-fn)))
+      (funcall label-fn captures)
+    (treesit-node-text node)))
 
 (defun elisp-tred--calc-number-of-closing-parens (node)
   "Calculate the number of closing parens (`)') that we need
@@ -368,16 +321,31 @@ collapsible UI widget in the tree buffer."
     ;; last child is the literal closing paren `)'.
     (eql child-index (- num-children 2))))
 
+(defun elisp-tred--get-child-nodes (node)
+  "Return the child nodes of NODE.
+
+Note that this function doesn't not necessarily return the same thing
+as `(treesit-node-children node)'. It implements custom rules for
+filtering child nodes, as specified by
+`elisp-tred--tree-mapping-rules'.
+"
+  (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
+            (query (plist-get rule :capture-query))
+			(nodes-only (plist-get rule :capture-nodes-only))
+            (pos (treesit-node-start node))
+            (captures (treesit-query-capture node query pos (1+ pos) nodes-only))
+            (child-nodes-fn (plist-get rule :child-nodes-fn)))
+      (funcall child-nodes-fn captures)
+    (treesit-node-children node t)))
+
 (defun elisp-tred--get-child-widgets (widget)
   "Get the widget definitions for the children of the given tree node
 WIDGET.
 
 This function is called when expanding a tree node in the UI."
   (let* ((node (widget-get widget :treesit-node))
-         (num-children-in-label (elisp-tred--get-num-children-in-expanded-label node)))
-    (mapcar 'elisp-tred--get-tree-widget
-            ;; skip children that already shown within label of parent node
-            (nthcdr num-children-in-label (elisp-tred--get-children node)))))
+         (child-nodes (elisp-tred--get-child-nodes node)))
+    (mapcar 'elisp-tred--get-tree-widget child-nodes)))
 
 (defun elisp-tred-refresh-tree-buffer ()
   (interactive)
