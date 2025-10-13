@@ -1,9 +1,5 @@
 (require 'treesit)
 
-(defvar elisp-tred-mode)
-
-(defvar-local elisp-tred--tree-buffer nil)
-
 (defvar-local elisp-tred-max-label-length 128
   "The maximum length of a tree node label. For the sake of
 performance, labels longer than this length will be truncated with an
@@ -13,13 +9,6 @@ It is important to impose a max length on the tree node labels because
 when a node is collapsed, it shows the full lisp code for its subtree
 in a single line, which can be very long indeed.")
 
-(define-minor-mode elisp-tred-mode
-  "Minor mode for Elisp tree editing."
-  :lighter "ET"
-  (if elisp-tred-mode
-      (elisp-tred--enable)
-    (elisp-tred--kill-tree-buffer)))
-
 (defvar-keymap elisp-tred--tree-mode-map
   "TAB" #'elisp-tred-toggle-node
   "<backtab>" #'elisp-tred-collapse-parent)
@@ -28,26 +17,6 @@ in a single line, which can be very long indeed.")
   "TM"
   "Mode for displaying lisp code as a tree."
   nil)
-
-(defun elisp-tred--enable ()
-  (message "enabling elisp-tred")
-  (unless (treesit-ready-p 'elisptred)
-	(if (not (treesit-language-available-p 'elisptred))
-        (user-error "Cannot find treesit grammar for elisptred")
-	  (treesit-create-parser 'elisptred)))
-  (unless (buffer-live-p elisp-tred--tree-buffer)
-    (setq-local elisp-tred--tree-buffer
-                (get-buffer-create
-                 (format "*elisp-tred: %s*"
-                         (buffer-name))))
-    (with-current-buffer elisp-tred--tree-buffer
-      (elisp-tred--tree-mode)
-      ;; Register a callback to update the labels of certain tree
-      ;; nodes, when they are expanded or collapsed.
-      (setq-local tree-widget-after-toggle-functions
-                  '(elisp-tred--update-label))))
-  (display-buffer elisp-tred--tree-buffer)
-  (elisp-tred-refresh-tree-buffer))
 
 (defun elisp-tred--get-toplevel-node-with-same-start-pos (node)
   (let* ((start-pos (treesit-node-start node))
@@ -125,10 +94,6 @@ form surrounding POINT."
     ;; elisp source buffer, unless the user overrides it in their
     ;; `display-buffer-alist'.
     (display-buffer tree-buffer '(display-buffer-same-window))))
-
-(defun elisp-tred--kill-tree-buffer ()
-  (when (buffer-live-p elisp-tred--tree-buffer)
-    (kill-buffer elisp-tred--tree-buffer)))
 
 (defun elisp-tred--get-icon-widget-for-current-line ()
   (save-excursion
@@ -343,14 +308,6 @@ This function is called when expanding a tree node in the UI."
   (let* ((node (widget-get widget :treesit-node))
          (child-nodes (elisp-tred--get-child-nodes node)))
     (mapcar 'elisp-tred--get-tree-widget child-nodes)))
-
-(defun elisp-tred-refresh-tree-buffer ()
-  (interactive)
-  (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (with-current-buffer elisp-tred--tree-buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-		(widget-create (elisp-tred--get-tree-widget root-node))))))
 
 (defun elisp-tred-show-tree-mapping-rule-at-point ()
   (interactive)
