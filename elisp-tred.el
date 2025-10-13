@@ -355,13 +355,6 @@ This function is called when expanding a tree node in the UI."
         (erase-buffer)
 		(widget-create (elisp-tred--get-tree-widget root-node))))))
 
-(defun elisp-tred--get-children (node)
-  "Get children of NODE, filtering out parentheses and other structural elements."
-  (seq-filter (lambda (child)
-                (let ((type (treesit-node-type child)))
-                  (not (member type '("(" ")")))))
-              (treesit-node-children node)))
-
 (defun elisp-tred-show-tree-mapping-rule-at-point ()
   (interactive)
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule-at-pos (point))))
