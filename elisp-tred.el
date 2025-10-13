@@ -2,9 +2,6 @@
 
 (defvar elisp-tred-mode)
 
-(defvar elisp-tred-indent-size 2
-  "Number of space characters to indent, for each successive level of the tree.")
-
 (defvar-local elisp-tred--tree-buffer nil)
 
 (defvar-local elisp-tred-max-label-length 128
