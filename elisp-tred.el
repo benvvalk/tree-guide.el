@@ -148,9 +148,70 @@ depending on whether the node is collapsed or expanded."
 (defvar elisp-tred--tree-mapping-rules
   `(
 
+    ;; If the first element of a list is a sequence (list or vector),
+    ;; use a bare "(" for the expanded parent label, and show the
+    ;; the first element (list or vector) on its own line.
+    ;;
+    ;; For example, render the list `((one) two three)' as;
+    ;;
+    ;; [-] (
+    ;;  |-- (one)
+    ;;  |-- two
+    ;;  |-- three)
+    ;;
+    ;; rather than:
+    ;;
+    ;; [-] ((one)
+    ;;  |-- two
+    ;;  |-- three)
+    ;;
+    ;; Embedding the first element in the parent label (second
+    ;; diagram) would prevent us from recursively expanding `(one)',
+    ;; which could be an arbitrarily complex list.
+    (:description "list where first element is a sequence (list or vector)"
+     :capture-query ((list :anchor [(list) (vector)] @child (_) :* @child))
+     :expanded-label-fn ,(lambda (captures) "("))
+
+    ;; If the first element of a vector is a sequence (list or vector)
+    ;; use a bare "[" for the expanded parent label, and show the
+    ;; first element (list or vector) on its own line.
+    ;;
+    ;; See the previous rule for further explanation, since it is
+    ;; very similar.
+    (:description "vector where first element is a sequence (list or vector)"
+     :capture-query ((vector :anchor [(list) (vector)] @child (_) :* @child))
+     :expanded-label-fn ,(lambda (captures) "["))
+
+    ;; If a list has two or more elements, show the first element as
+    ;; part of the parent node label. For example, render the list
+    ;; `(one two tree)' as:
+    ;;
+    ;; [-] (one
+    ;;  |-- two
+    ;;  |-- three)
+    ;;
+    ;; rather than:
+    ;;
+    ;; [-] (
+    ;;  |-- one
+    ;;  |-- two
+    ;;  |-- tree)
+    ;;
+    ;; It's a matter of taste, but I find putting the opening paren
+    ;; ("(") on its own line really wastes a lot of vertical space and
+    ;; hurts readability.
+    ;;
+    ;; One exception is when the first element of the list is itself a
+    ;; list (or a vector). But that case is handled by previous rules
+    ;; above this one.
+    (:description "a list with two or more elements"
+     :capture-query ((list :anchor (_) @child (_) :+ @child))
+     :capture-nodes-only t
+     :expanded-label-fn ,(lambda (captures) (concat "(" (treesit-node-text (car captures))))
+     :child-nodes-fn ,(lambda (captures) (cdr captures)))
+
     (:description "a list"
      :capture-query ((list) @node)
-     :capture-nodes-only t
      :expanded-label-fn ,(lambda (captures) "("))
 
     (:description "default rule"
