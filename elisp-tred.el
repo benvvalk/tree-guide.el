@@ -210,12 +210,12 @@ nodes.")
   "Return the text label for a treesit node (NODE) when
 it is expanded."
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
-            (query (plist-get rule :capture-query))
-			(nodes-only (plist-get rule :capture-nodes-only))
-            (pos (treesit-node-start node))
-            (captures (treesit-query-capture node query pos (1+ pos) nodes-only))
             (label-fn (plist-get rule :expanded-label-fn)))
-      (funcall label-fn captures)
+      (let* ((query (plist-get rule :capture-query))
+             (nodes-only (plist-get rule :capture-nodes-only))
+             (pos (treesit-node-start node))
+             (captures (treesit-query-capture node query pos (1+ pos) nodes-only)))
+        (funcall label-fn captures))
     (treesit-node-text node)))
 
 (defun elisp-tred--calc-number-of-closing-parens (node)
