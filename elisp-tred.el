@@ -148,9 +148,10 @@ depending on whether the node is collapsed or expanded."
 (defvar elisp-tred--tree-mapping-rules
   `(
 
-    ;; If the first element of a list is a sequence (list or vector),
-    ;; use a bare "(" for the expanded parent label, and show the
-    ;; the first element (list or vector) on its own line.
+    ;; If the node is a sequence (list or vector), and the first
+    ;; child is also a sequence (i.e. a list or vector), use a bare
+    ;; "(" or "[" for the expanded parent label, and show the first
+    ;; child on its own line.
     ;;
     ;; For example, render the list `((one) two three)' as;
     ;;
@@ -165,25 +166,28 @@ depending on whether the node is collapsed or expanded."
     ;;  |-- two
     ;;  |-- three)
     ;;
-    ;; Embedding the first element in the parent label (second
-    ;; diagram) would prevent us from recursively expanding `(one)',
-    ;; which could be an arbitrarily complex list.
+    ;; We don't want to embed the first element in the parent label
+    ;; (second diagram) because it prevents us from recursively
+    ;; expanding the first child (`(one)' in the example above), which
+    ;; could be an arbitrarily complex list.
     (:description "list where first element is a sequence (list or vector)"
-     :capture-query ((list :anchor [(list) (vector)] @child (_) :* @child))
-     :expanded-label-fn ,(lambda (captures) "("))
+     :capture-fn
+     (lambda (node)
+        (when (member (treesit-node-type node) '("list" "vector"))
+          (when-let* ((child0 (treesit-node-child node 0 t))
+                      (child0-type (treesit-node-type child0)))
+            (when (member child0-type '("list" "vector"))
+              (treesit-node-children node t)))))
+     :expanded-label-fn
+     (lambda (node captures)
+        (pcase (treesit-node-type node)
+          ("list" "(")
+          ("vector" "[")
+          (_ (error "capture-fn: unhandled case"))))
+     )
 
-    ;; If the first element of a vector is a sequence (list or vector)
-    ;; use a bare "[" for the expanded parent label, and show the
-    ;; first element (list or vector) on its own line.
-    ;;
-    ;; See the previous rule for further explanation, since it is
-    ;; very similar.
-    (:description "vector where first element is a sequence (list or vector)"
-     :capture-query ((vector :anchor [(list) (vector)] @child (_) :* @child))
-     :expanded-label-fn ,(lambda (captures) "["))
-
-    ;; If a list has two or more elements, show the first element as
-    ;; part of the parent node label. For example, render the list
+    ;; If a sequence has two or more elements, show the first element
+    ;; as part of the parent node label. For example, render the list
     ;; `(one two tree)' as:
     ;;
     ;; [-] (one
@@ -202,64 +206,107 @@ depending on whether the node is collapsed or expanded."
     ;; hurts readability.
     ;;
     ;; One exception is when the first element of the list is itself a
-    ;; list (or a vector). But that case is handled by previous rules
+    ;; list (or a vector). But that case is handled by a previous rule
     ;; above this one.
-    (:description "a list with two or more elements"
-     :capture-query ((list :anchor (_) @child (_) :+ @child))
-     :capture-nodes-only t
-     :expanded-label-fn ,(lambda (captures) (concat "(" (treesit-node-text (car captures))))
-     :child-nodes-fn ,(lambda (captures) (cdr captures)))
+    (:description "a sequence (list or vector) with two or more elements"
+     :capture-fn
+     (lambda (node)
+       (when (and (member (treesit-node-type node) (list "list" "vector"))
+                   (>= (treesit-node-child-count node t) 2))
+              (treesit-node-children node t)))
+     :expanded-label-fn
+     (lambda (node captures)
+        (let* ((child0 (car captures))
+               (child0-text (treesit-node-text child0)))
+          (pcase (treesit-node-type node)
+            ("list" (concat "(" child0-text))
+            ("vector" (concat "[" child0-text))
+            (_ (error "capture-fn: unhandled case")))))
+     :child-nodes-fn
+     (lambda (node captures)
+        (cdr captures)))
 
-    (:description "a list"
-     :capture-query ((list) @node)
-     :expanded-label-fn ,(lambda (captures) "("))
-
-    (:description "default rule"
-     :capture-query ((_) @node))
+    (:description "a sequence (list or vector)"
+     :capture-fn
+     (lambda (node)
+        (when (member (treesit-node-type node) (list "list" "vector"))
+          (treesit-node-children node t)))
+     :expanded-label-fn
+     (lambda (node captures)
+        (pcase (treesit-node-type node)
+          ("list" "(")
+          ("vector" "[")
+          (_ (error "capture-fn: unhandled case")))))
 
     )
 
-  "A list of query-based rules for mapping the structure of the
-tree-sitter parse tree to the structure of the interactive tree shown
-in the elisp-tred buffer. Using a simple one-to-one mapping
-(i.e. rendering the tree-sitter parse tree verbatim) is possible but
-not that useful in practice, because it results in a lot of
-intermediate nodes that make the tree tedious to navigate.
+  "A list of rules for mapping the structure of the tree-sitter parse
+tree to the structure of the elisp-tred tree. Generally speaking,
+directly mapping the tree-sitter parse tree to the elisp-tred tree is
+not very practical, because it results in a lot of unwanted
+intermediate nodes. So we need to to reshape the parse tree in various
+ways before we show it to the user.
 
-`elisp-tred--tree-mapping-rules' is a list of rules, where each rule
-is a plist contained the following properties:
+ When we are building the elisp-tred from the tree-sitter parse tree,
+we want two things as we visit each tree-sitter node: (1) What text
+should we use to represent the current tree-sitter node in the
+elisp-tred tree?, and (2) Which child nodes of the current tree-sitter
+node should we process to generate the children in the elisp tred
+tree?  The purpose of the tree-mapping rules is to answer these two
+questions for the different types of nodes we encounter in the
+tree-sitter parse tree. The `:expander-label-fn' (see below) answers
+question (1), and the `:child-nodes-fn' answers question (2).
 
-:description - A string that describes the rule. This is only for
-making debugging easier.
+Each tree-mapping rule is a plist consisting of the following
+properties:
 
-:capture-query - A tree-sitter \"capture query\" that is passed to
-`treesit-query-capture'. The rule matches if the query a non-empty
-result.
+:description' (optional) - An optional string that is used only for
+debugging purposes and which describes the type of treesit node that
+is matched by this rule (e.g. \"a list with 2 or more elements\").
 
-:capture-nodes-only - This is passed as the NODES-ONLY argument of
-`treesit-query-capture', and affects how the query results (i.e.
-captured treesit nodes) are passed to the `:expanded-label-fn' and
-`:child-nodes-fn' functions.
+`:capture-fn' (optional) - A function that is used to determine if a
+given treesit node is a match for this tree-mapping rule (e.g. \"Is
+it a list with 2 or more elements?\").  The `:capture-fn' function
+takes a single argument, which is the treesit node to be tested. If
+the `:capture-fn' determines that the treesit node is a match
+(e.g. it is a list with 2 or more elements), the return value is the
+list of \"captures\", i.e. a list of treesit nodes that will be
+passed as an argument to the `:expanded-label-fn' and the
+`:child-nodes-fn'.  In the case that a given treesit node does not
+match this tree-mapping rule, `:capture-fn' should returns `nil' to
+indicate a non-match. Specifying a `:capture-fn' is optional, and
+defaults to a function that returns all named children of the given
+treesit node (i.e. it makes the rule match any treesit node).
 
-:expanded-label-fn - A function that is used to generate the label
-text for the tree node when it is in expanded state.  Note that there
-is no corresponding `:collapsed-label-fn' because the labels on
-collapsed tree nodes are always the same -- they show the entire
-elisp code for the subtree, collapsed to a single line.
+`:expanded-label-fn' (optional) - A function that is used to generate
+the label text for the elisp-tred tree node when it is in expanded
+state.  For example, a list node might show a \"(\" when it is
+expanded, and the full list contents when it is collapsed.  The
+`:expanded-label-fn' takes two arguments: (1) the root treesit NODE
+that matched this tree-mapping rule, and (2) the CAPTURES list, which
+is the list of treesit nodes returned by the `:capture-fn' (see
+above). The `:expanded-label-fn' is optional and will default to just
+returning the entire source code text corresponding the target treesit
+node.  Side note: there is no `:collapsed-label-fn' that corresponds
+to `:expanded-label-fn' because the labels for collapsed tree nodes
+are always the same -- they show the entire elisp code for the
+subtree, collapsed to a single line.
 
-:child-nodes-fn - A function that returns the treesit nodes for the
-the child widgets of the current node, in the elisp tred tree.  This
-function takes a single argument, which is output of the
-`treesit-query-capture' function, i.e. the list of captured treesit
-nodes.")
+`:child-nodes-fn' (optional) - A function that returns the treesit nodes
+for the the child widgets of the current node in the elisp-tred tree.
+This function takes two arguments: (1) the root treesit NODE that
+matched this tree-mapping rule, and (2) the CAPTURES list, which is
+the list of treesit nodes returned by the `:capture-fn' (see
+above). The `:child-nodes-fn' is optional and defaults to returning
+all named children of the matched treesit node.")
 
 (defun elisp-tred--get-tree-mapping-rule (node)
   (catch 'break
     (dolist (rule elisp-tred--tree-mapping-rules)
-	  (let* ((pos (treesit-node-start node))
-                  (query (plist-get rule :capture-query))
-                  (nodes-only (plist-get rule :capture-nodes-only))
-                  (captures (treesit-query-capture node query pos (1+ pos) nodes-only)))
+	  (let* ((capture-fn (plist-get rule :capture-fn))
+             (captures (if capture-fn
+                           (funcall capture-fn node)
+                         (treesit-node-children node t))))
         (when captures
           (throw 'break rule))))))
 
@@ -272,11 +319,11 @@ nodes.")
 it is expanded."
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
             (label-fn (plist-get rule :expanded-label-fn)))
-      (let* ((query (plist-get rule :capture-query))
-             (nodes-only (plist-get rule :capture-nodes-only))
-             (pos (treesit-node-start node))
-             (captures (treesit-query-capture node query pos (1+ pos) nodes-only)))
-        (funcall label-fn captures))
+      (let* ((capture-fn (plist-get rule :capture-fn))
+             (captures (if capture-fn
+                           (funcall capture-fn node)
+                         (treesit-node-children node t))))
+        (funcall label-fn node captures))
     (treesit-node-text node)))
 
 (defun elisp-tred--calc-number-of-closing-parens (node)
@@ -353,12 +400,12 @@ filtering child nodes, as specified by
 `elisp-tred--tree-mapping-rules'.
 "
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
-            (query (plist-get rule :capture-query))
-			(nodes-only (plist-get rule :capture-nodes-only))
-            (pos (treesit-node-start node))
-            (captures (treesit-query-capture node query pos (1+ pos) nodes-only))
             (child-nodes-fn (plist-get rule :child-nodes-fn)))
-      (funcall child-nodes-fn captures)
+      (let* ((capture-fn (plist-get rule :capture-fn))
+             (captures (if capture-fn
+                           (funcall capture-fn node)
+                         (treesit-node-children node t))))
+        (funcall child-nodes-fn node captures))
     (treesit-node-children node t)))
 
 (defun elisp-tred--get-child-widgets (widget)
@@ -369,94 +416,5 @@ This function is called when expanding a tree node in the UI."
   (let* ((node (widget-get widget :treesit-node))
          (child-nodes (elisp-tred--get-child-nodes node)))
     (mapcar 'elisp-tred--get-tree-widget child-nodes)))
-
-(defun elisp-tred-show-tree-mapping-rule-at-point ()
-  (interactive)
-  (if-let* ((rule (elisp-tred--get-tree-mapping-rule-at-pos (point))))
-      (message "matched: \"%s\"" (plist-get rule :description))
-    (message "no match")))
-
-(defun elisp-tred-show-tree-mapping ()
-  "Show the result of applying tree mapping rules to the current position.
-
-This command helps interactively test and develop tree mapping rules by:
-1. Finding the treesit node at point
-2. Attempting to match each rule in `elisp-tred--tree-mapping-rules'
-3. Displaying the results in a buffer showing which rules matched and their output"
-  (interactive)
-
-  (elisp-tred--treesit-init)
-
-  (when-let* ((node (elisp-tred--treesit-node-at (point))))
-    ;; Try each rule against the node
-    (let* ((results-buffer (get-buffer-create "*elisp-tred-mapping*"))
-           (results '()))
-      (dolist (rule elisp-tred--tree-mapping-rules)
-        (let* ((description (plist-get rule :description))
-               (query (plist-get rule :capture-query))
-               (capture-nodes-only (plist-get rule :capture-nodes-only))
-               (expanded-label (plist-get rule :expanded-label))
-               (child-nodes-fn (plist-get rule :child-nodes-fn))
-               (captures (treesit-query-capture node query (point) (1+ (point)) capture-nodes-only))
-               (matched (not (null captures))))
-
-          (push (list :description description
-                      :matched matched
-                      :captures captures
-                      :capture-nodes-only capture-nodes-only
-                      :expanded-label expanded-label
-                      :child-nodes-fn child-nodes-fn)
-                results)))
-
-      ;; Display results
-      (with-current-buffer results-buffer
-        (let ((inhibit-read-only t))
-          (erase-buffer)
-          (insert (format "Tree Mapping Rules Test\n"))
-          (insert (format "=======================\n\n"))
-          (insert (format "Node at point: %s\n" (treesit-node-type node)))
-          (insert (format "Node text: %s\n\n"
-                          (elisp-tred--remove-newlines-and-collapse-spaces
-                           (treesit-node-text node))))
-
-          (dolist (result (reverse results))
-            (let ((description (plist-get result :description))
-                  (matched (plist-get result :matched))
-                  (captures (plist-get result :captures))
-                  (capture-nodes-only (plist-get result :capture-nodes-only))
-                  (expanded-label (plist-get result :expanded-label))
-                  (child-nodes-fn (plist-get result :child-nodes-fn)))
-
-              (insert (format "Rule: %s\n" description))
-              (insert (format "  Status: %s\n" (if matched "MATCHED" "did not match")))
-
-              (when matched
-                (insert (format "  Captures: %d\n" (length captures)))
-                (dolist (capture captures)
-                  (let* ((capture-name (unless capture-nodes-only (car capture)))
-                         (capture-node (if capture-nodes-only capture (cdr capture)))
-                         (capture-text (elisp-tred--remove-newlines-and-collapse-spaces
-                                        (treesit-node-text capture-node))))
-                    (if capture-nodes-only
-                        (insert (format "    - %s\n" capture-text))
-                      (insert (format "    - %s: %s\n" capture-name capture-text)))))
-
-                (when expanded-label
-                  (insert (format "  Label: %s\n" expanded-label)))
-
-                (when child-nodes-fn
-                  (let ((children (funcall child-nodes-fn captures)))
-                    (insert (format "  Children: %d\n" (length children)))
-                    (dolist (child children)
-                      (let ((child-text (elisp-tred--remove-newlines-and-collapse-spaces
-                                         (treesit-node-text child))))
-                        (insert (format "    - %s\n" child-text)))))))
-
-              (insert "\n")))
-
-          (goto-char (point-min))
-          (special-mode)))
-
-      (display-buffer results-buffer))))
 
 (provide 'elisp-tred)
