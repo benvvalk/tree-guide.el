@@ -171,19 +171,19 @@ depending on whether the node is collapsed or expanded."
     ;; expanding the first child (`(one)' in the example above), which
     ;; could be an arbitrarily complex list.
     (:description "list where first element is a sequence (list or vector)"
-     :capture-fn
+     :match-fn
      (lambda (node)
-        (when (member (treesit-node-type node) '("list" "vector"))
-          (when-let* ((child0 (treesit-node-child node 0 t))
-                      (child0-type (treesit-node-type child0)))
-            (when (member child0-type '("list" "vector"))
-              (treesit-node-children node t)))))
+       (when-let* ((node-type (treesit-node-type node))
+                   (child0 (treesit-node-child node 0 t))
+                   (child0-type (treesit-node-type child0)))
+         (and (member node-type '("list" "vector"))
+			  (member child0-type '("list" "vector")))))
      :expanded-label-fn
-     (lambda (node captures)
+     (lambda (node)
         (pcase (treesit-node-type node)
           ("list" "(")
           ("vector" "[")
-          (_ (error "capture-fn: unhandled case"))))
+          (_ (error "match-fn: unhandled case"))))
      )
 
     ;; If a sequence has two or more elements, show the first element
@@ -209,34 +209,32 @@ depending on whether the node is collapsed or expanded."
     ;; list (or a vector). But that case is handled by a previous rule
     ;; above this one.
     (:description "a sequence (list or vector) with two or more elements"
-     :capture-fn
+     :match-fn
      (lambda (node)
-       (when (and (member (treesit-node-type node) (list "list" "vector"))
-                   (>= (treesit-node-child-count node t) 2))
-              (treesit-node-children node t)))
+       (and (member (treesit-node-type node) (list "list" "vector"))
+            (>= (treesit-node-child-count node t) 2)))
      :expanded-label-fn
-     (lambda (node captures)
-        (let* ((child0 (car captures))
-               (child0-text (treesit-node-text child0)))
+     (lambda (node)
+        (when-let* ((child0 (treesit-node-child node 0 t))
+                    (child0-text (treesit-node-text child0)))
           (pcase (treesit-node-type node)
             ("list" (concat "(" child0-text))
             ("vector" (concat "[" child0-text))
-            (_ (error "capture-fn: unhandled case")))))
+            (_ (error "match-fn: unhandled case")))))
      :child-nodes-fn
-     (lambda (node captures)
-        (cdr captures)))
+     (lambda (node)
+        (cdr (treesit-node-children node t))))
 
     (:description "a sequence (list or vector)"
-     :capture-fn
+     :match-fn
      (lambda (node)
-        (when (member (treesit-node-type node) (list "list" "vector"))
-          (treesit-node-children node t)))
+       (member (treesit-node-type node) (list "list" "vector")))
      :expanded-label-fn
-     (lambda (node captures)
+     (lambda (node)
         (pcase (treesit-node-type node)
           ("list" "(")
           ("vector" "[")
-          (_ (error "capture-fn: unhandled case")))))
+          (_ (error "match-fn: unhandled case")))))
 
     )
 
@@ -264,51 +262,41 @@ properties:
 debugging purposes and which describes the type of treesit node that
 is matched by this rule (e.g. \"a list with 2 or more elements\").
 
-`:capture-fn' (optional) - A function that is used to determine if a
+`:match-fn' (required) - A function that is used to determine if a
 given treesit node is a match for this tree-mapping rule (e.g. \"Is
-it a list with 2 or more elements?\").  The `:capture-fn' function
+it a list with 2 or more elements?\"). The `:match-fn' function
 takes a single argument, which is the treesit node to be tested. If
-the `:capture-fn' determines that the treesit node is a match
-(e.g. it is a list with 2 or more elements), the return value is the
-list of \"captures\", i.e. a list of treesit nodes that will be
-passed as an argument to the `:expanded-label-fn' and the
-`:child-nodes-fn'.  In the case that a given treesit node does not
-match this tree-mapping rule, `:capture-fn' should returns `nil' to
-indicate a non-match. Specifying a `:capture-fn' is optional, and
-defaults to a function that returns all named children of the given
-treesit node (i.e. it makes the rule match any treesit node).
+the `:match-fn' determines that the treesit node is a match
+(e.g. it is a list with 2 or more elements) it should return
+a non-nil value. `:match-fn' is the only required property
+for a tree-mapping rule.
 
 `:expanded-label-fn' (optional) - A function that is used to generate
 the label text for the elisp-tred tree node when it is in expanded
-state.  For example, a list node might show a \"(\" when it is
-expanded, and the full list contents when it is collapsed.  The
-`:expanded-label-fn' takes two arguments: (1) the root treesit NODE
-that matched this tree-mapping rule, and (2) the CAPTURES list, which
-is the list of treesit nodes returned by the `:capture-fn' (see
-above). The `:expanded-label-fn' is optional and will default to just
-returning the entire source code text corresponding the target treesit
-node.  Side note: there is no `:collapsed-label-fn' that corresponds
-to `:expanded-label-fn' because the labels for collapsed tree nodes
-are always the same -- they show the entire elisp code for the
-subtree, collapsed to a single line.
+state. For example, a elisp-tred node might show a \"(\" when it is
+expanded, and the full list contents when it is collapsed. The
+`:expanded-label-fn' takes a single argument NODE, which is a treesit
+node that matched this tree mapping rule (as determined by
+`:match-fn'). The `:expanded-label-fn' is optional and will default to
+just returning the entire source code text corresponding to NODE.
+Side note: There is no `:collapsed-label-fn' that corresponds to
+`:expanded-label-fn' because the labels for collapsed elisp-tred nodes
+are always follow the same rule -- they show the entire elisp code for
+the subtree, collapsed to a single line.
 
 `:child-nodes-fn' (optional) - A function that returns the treesit nodes
 for the the child widgets of the current node in the elisp-tred tree.
-This function takes two arguments: (1) the root treesit NODE that
-matched this tree-mapping rule, and (2) the CAPTURES list, which is
-the list of treesit nodes returned by the `:capture-fn' (see
-above). The `:child-nodes-fn' is optional and defaults to returning
-all named children of the matched treesit node.")
+The `:expanded-label-fn' takes a single argument NODE, which is a treesit
+node that matched this tree mapping rule (as determined by
+`:match-fn'). The `:child-nodes-fn' is optional and defaults to returning
+all named children of NODE.")
 
 (defun elisp-tred--get-tree-mapping-rule (node)
   (catch 'break
     (dolist (rule elisp-tred--tree-mapping-rules)
-	  (let* ((capture-fn (plist-get rule :capture-fn))
-             (captures (if capture-fn
-                           (funcall capture-fn node)
-                         (treesit-node-children node t))))
-        (when captures
-          (throw 'break rule))))))
+	  (when-let* ((match-fn (plist-get rule :match-fn))
+                  (match-p (funcall match-fn node)))
+        (throw 'break rule)))))
 
 (defun elisp-tred--get-tree-mapping-rule-at-pos (pos)
   (when-let* ((node (elisp-tred--treesit-node-at pos)))
@@ -319,11 +307,7 @@ all named children of the matched treesit node.")
 it is expanded."
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
             (label-fn (plist-get rule :expanded-label-fn)))
-      (let* ((capture-fn (plist-get rule :capture-fn))
-             (captures (if capture-fn
-                           (funcall capture-fn node)
-                         (treesit-node-children node t))))
-        (funcall label-fn node captures))
+      (funcall label-fn node)
     (treesit-node-text node)))
 
 (defun elisp-tred--calc-number-of-closing-parens (node)
@@ -401,11 +385,7 @@ filtering child nodes, as specified by
 "
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
             (child-nodes-fn (plist-get rule :child-nodes-fn)))
-      (let* ((capture-fn (plist-get rule :capture-fn))
-             (captures (if capture-fn
-                           (funcall capture-fn node)
-                         (treesit-node-children node t))))
-        (funcall child-nodes-fn node captures))
+      (funcall child-nodes-fn node)
     (treesit-node-children node t)))
 
 (defun elisp-tred--get-child-widgets (widget)
