@@ -145,50 +145,86 @@ depending on whether the node is collapsed or expanded."
   (let ((no-newlines (replace-regexp-in-string "\n" " " str)))
     (replace-regexp-in-string "\\s-+" " " no-newlines)))
 
+(defun elisp-tred--quoted-p (node)
+  "Return `t' if NODE is treesit node for a quoted form (e.g. a quoted
+list), or `nil' otherwise."
+  (equal (treesit-node-type node) "quote"))
+
+(defun elisp-tred--unquote (node)
+  "If NODE is treesit node for a quoted form (e.g. a quoted list),
+return the child treesit node for the unquoted form. Otherwise return
+`nil'."
+  (when (elisp-tred--quoted-p node)
+    (treesit-node-child node 0 t)))
+
+(defun elisp-tred--sequence-p (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a quoted
+sequence, return `t'. Otherwise return `nil'."
+  (if (elisp-tred--quoted-p node)
+      (elisp-tred--sequence-p (elisp-tred--unquote node))
+    (member (treesit-node-type node) '("list" "vector"))))
+
+(defun elisp-tred--sequence-length (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a
+quoted sequence, return the number of elements in the
+sequence. Otherwise return `nil'."
+  (when (elisp-tred--sequence-p node)
+    (if (elisp-tred--quoted-p node)
+       (elisp-tred--sequence-length (elisp-tred--unquote node))
+     (treesit-node-child-count node t))))
+
+(defun elisp-tred--sequence-children (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a
+quoted sequence, return the treesit nodes for elements of the
+sequence. Otherwise, return `nil'."
+  (when (elisp-tred--sequence-p node)
+    (if (elisp-tred--quoted-p node)
+        (elisp-tred--sequence-children (elisp-tred--unquote node))
+      (treesit-node-children node t))))
+
+(defun elisp-tred--sequence-car (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a
+quoted sequence, return the treesit node for the first element
+of the sequence. Otherwise, return `nil'."
+  (car (elisp-tred--sequence-children node)))
+
+(defun elisp-tred--sequence-cdr (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a
+quoted sequence, return the treesit nodes for all elements
+of the sequence except the first. Otherwise, return `nil'."
+  (cdr (elisp-tred--sequence-children node)))
+
+(defun elisp-tred--left-bracket-char (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a
+quoted sequence, return a string containing the left (opening) bracket character.
+
+For lists and quoted lists, the return value is \"(\".
+
+For vectors and quoted vectors, the return value is \"[\"."
+  (when (elisp-tred--sequence-p node)
+    (if (elisp-tred--quoted-p node)
+        (elisp-tred--left-bracket-char (elisp-tred--unquote node))
+      (pcase (treesit-node-type node)
+        ("list" "(")
+        ("vector" "[")
+        (_ (error "unhandled case"))))))
+
+(defun elisp-tred--quote-char (node)
+  "If NODE is a treesit node for a quoted form (e.g. a quoted list),
+return the quote character, which will be one of: \"'\", \"`\", or \"#'\".
+
+If NODE is not a treesit node for a quoted form, return `nil'."
+  (when (elisp-tred--quoted-p node)
+    (treesit-node-text (treesit-node-child node 0))))
+
 (defvar elisp-tred--tree-mapping-rules
   `(
-
-    ;; If the node is a sequence (list or vector), and the first
-    ;; child is also a sequence (i.e. a list or vector), use a bare
-    ;; "(" or "[" for the expanded parent label, and show the first
-    ;; child on its own line.
+    ;; If a sequence (list or vector) has two or more elements, and
+    ;; the first element is not a sequence, show the first element as
+    ;; part of the parent node label rather than as it's own child
+    ;; element.
     ;;
-    ;; For example, render the list `((one) two three)' as;
-    ;;
-    ;; [-] (
-    ;;  |-- (one)
-    ;;  |-- two
-    ;;  |-- three)
-    ;;
-    ;; rather than:
-    ;;
-    ;; [-] ((one)
-    ;;  |-- two
-    ;;  |-- three)
-    ;;
-    ;; We don't want to embed the first element in the parent label
-    ;; (second diagram) because it prevents us from recursively
-    ;; expanding the first child (`(one)' in the example above), which
-    ;; could be an arbitrarily complex list.
-    (:description "list where first element is a sequence (list or vector)"
-     :match-fn
-     (lambda (node)
-       (when-let* ((node-type (treesit-node-type node))
-                   (child0 (treesit-node-child node 0 t))
-                   (child0-type (treesit-node-type child0)))
-         (and (member node-type '("list" "vector"))
-			  (member child0-type '("list" "vector")))))
-     :expanded-label-fn
-     (lambda (node)
-        (pcase (treesit-node-type node)
-          ("list" "(")
-          ("vector" "[")
-          (_ (error "match-fn: unhandled case"))))
-     )
-
-    ;; If a sequence has two or more elements, show the first element
-    ;; as part of the parent node label. For example, render the list
-    ;; `(one two tree)' as:
+    ;; For example, render the list `(one two tree)' as:
     ;;
     ;; [-] (one
     ;;  |-- two
@@ -202,41 +238,39 @@ depending on whether the node is collapsed or expanded."
     ;;  |-- tree)
     ;;
     ;; It's a matter of taste, but I find putting the opening paren
-    ;; ("(") on its own line really wastes a lot of vertical space and
-    ;; hurts readability.
-    ;;
-    ;; One exception is when the first element of the list is itself a
-    ;; list (or a vector). But that case is handled by a previous rule
-    ;; above this one.
-    (:description "a sequence (list or vector) with two or more elements"
+    ;; ("(") on its own line wastes too much vertical space and
+    ;; hurts readability of the code.
+    (:description "a sequence (list or vector) with two or more elements, and the first element is not a sequence"
+
      :match-fn
      (lambda (node)
-       (and (member (treesit-node-type node) (list "list" "vector"))
-            (>= (treesit-node-child-count node t) 2)))
+	   (and (elisp-tred--sequence-p node)
+            (>= (elisp-tred--sequence-length node) 2)
+            (not (elisp-tred--sequence-p (elisp-tred--sequence-car node)))))
+
      :expanded-label-fn
      (lambda (node)
-        (when-let* ((child0 (treesit-node-child node 0 t))
-                    (child0-text (treesit-node-text child0)))
-          (pcase (treesit-node-type node)
-            ("list" (concat "(" child0-text))
-            ("vector" (concat "[" child0-text))
-            (_ (error "match-fn: unhandled case")))))
+       (let* ((quote-char (elisp-tred--quote-char node)))
+         (when-let* ((left-bracket (elisp-tred--left-bracket-char node))
+                     (child0 (elisp-tred--sequence-car node))
+                     (child0-text (treesit-node-text child0)))
+           (concat quote-char
+                   left-bracket
+                   child0-text))))
+
      :child-nodes-fn
      (lambda (node)
-        (cdr (treesit-node-children node t))))
+       (elisp-tred--sequence-cdr node)))
 
-    (:description "a sequence (list or vector)"
+    (:description "a sequence (list or vector) or quoted sequence"
      :match-fn
      (lambda (node)
-       (member (treesit-node-type node) (list "list" "vector")))
+       (elisp-tred--sequence-p node))
+
      :expanded-label-fn
      (lambda (node)
-        (pcase (treesit-node-type node)
-          ("list" "(")
-          ("vector" "[")
-          (_ (error "match-fn: unhandled case")))))
-
-    )
+       (concat (elisp-tred--quote-char node)
+               (elisp-tred--left-bracket-char node)))))
 
   "A list of rules for mapping the structure of the tree-sitter parse
 tree to the structure of the elisp-tred tree. Generally speaking,
