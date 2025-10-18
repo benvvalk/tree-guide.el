@@ -86,7 +86,13 @@ form surrounding POINT."
       ;; Register a callback to update the labels of certain tree
       ;; nodes, when they are expanded or collapsed.
       (setq-local tree-widget-after-toggle-functions
-                  '(elisp-tred--update-label))
+                  '(elisp-tred--update-label)
+                  ;; Remove default space between tree node icon and
+                  ;; label. For lists/vectors, we use the opening
+                  ;; bracket "("/"[" for the tree node icon, it looks
+                  ;; weird to introduce a space before the list/vector
+                  ;; contents.
+                  tree-widget-space-width 0)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (widget-create (elisp-tred--get-tree-widget root-node))))
@@ -153,34 +159,29 @@ list), or `nil' otherwise."
 (defun elisp-tred--unquote (node)
   "If NODE is treesit node for a quoted form (e.g. a quoted list),
 return the child treesit node for the unquoted form. Otherwise return
-`nil'."
-  (when (elisp-tred--quoted-p node)
-    (treesit-node-child node 0 t)))
+NODE unmodified."
+  (if (elisp-tred--quoted-p node)
+      (treesit-node-child node 0 t)
+    node))
 
 (defun elisp-tred--sequence-p (node)
   "If NODE is a treesit node for a sequence (list or vector) or a quoted
 sequence, return `t'. Otherwise return `nil'."
-  (if (elisp-tred--quoted-p node)
-      (elisp-tred--sequence-p (elisp-tred--unquote node))
-    (member (treesit-node-type node) '("list" "vector"))))
+  (member (treesit-node-type (elisp-tred--unquote node)) '("list" "vector")))
 
 (defun elisp-tred--sequence-length (node)
   "If NODE is a treesit node for a sequence (list or vector) or a
 quoted sequence, return the number of elements in the
 sequence. Otherwise return `nil'."
   (when (elisp-tred--sequence-p node)
-    (if (elisp-tred--quoted-p node)
-       (elisp-tred--sequence-length (elisp-tred--unquote node))
-     (treesit-node-child-count node t))))
+    (treesit-node-child-count (elisp-tred--unquote node) t)))
 
 (defun elisp-tred--sequence-children (node)
   "If NODE is a treesit node for a sequence (list or vector) or a
 quoted sequence, return the treesit nodes for elements of the
 sequence. Otherwise, return `nil'."
   (when (elisp-tred--sequence-p node)
-    (if (elisp-tred--quoted-p node)
-        (elisp-tred--sequence-children (elisp-tred--unquote node))
-      (treesit-node-children node t))))
+    (treesit-node-children (elisp-tred--unquote node) t)))
 
 (defun elisp-tred--sequence-car (node)
   "If NODE is a treesit node for a sequence (list or vector) or a
@@ -207,6 +208,21 @@ For vectors and quoted vectors, the return value is \"[\"."
       (pcase (treesit-node-type node)
         ("list" "(")
         ("vector" "[")
+        (_ (error "unhandled case"))))))
+
+(defun elisp-tred--right-bracket-char (node)
+  "If NODE is a treesit node for a sequence (list or vector) or a
+quoted sequence, return a string containing the right (closing) bracket character.
+
+For lists and quoted lists, the return value is \")\".
+
+For vectors and quoted vectors, the return value is \"]\"."
+  (when (elisp-tred--sequence-p node)
+    (if (elisp-tred--quoted-p node)
+        (elisp-tred--right-bracket-char (elisp-tred--unquote node))
+      (pcase (treesit-node-type node)
+        ("list" ")")
+        ("vector" "]")
         (_ (error "unhandled case"))))))
 
 (defun elisp-tred--quote-char (node)
@@ -254,9 +270,7 @@ If NODE is not a treesit node for a quoted form, return `nil'."
          (when-let* ((left-bracket (elisp-tred--left-bracket-char node))
                      (child0 (elisp-tred--sequence-car node))
                      (child0-text (treesit-node-text child0)))
-           (concat quote-char
-                   left-bracket
-                   child0-text))))
+           child0-text)))
 
      :child-nodes-fn
      (lambda (node)
@@ -265,12 +279,9 @@ If NODE is not a treesit node for a quoted form, return `nil'."
     (:description "a sequence (list or vector) or quoted sequence"
      :match-fn
      (lambda (node)
-       (elisp-tred--sequence-p node))
+       (elisp-tred--sequence-p node)))
 
-     :expanded-label-fn
-     (lambda (node)
-       (concat (elisp-tred--quote-char node)
-               (elisp-tred--left-bracket-char node)))))
+    )
 
   "A list of rules for mapping the structure of the tree-sitter parse
 tree to the structure of the elisp-tred tree. Generally speaking,
@@ -342,7 +353,7 @@ it is expanded."
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
             (label-fn (plist-get rule :expanded-label-fn)))
       (funcall label-fn node)
-    (treesit-node-text node)))
+    ""))
 
 (defun elisp-tred--calc-number-of-closing-parens (node)
   "Calculate the number of closing parens (`)') that we need
@@ -359,14 +370,48 @@ tree). If NODE is not the last child of its parent, we always return
         1)
       0))
 
+(defun elisp-tred--get-collapsed-label-for-sequence (node)
+  "Given a treesit node NODE for a sequence (list or vector), return
+the label for the node in its collapsed state, i.e. when its children
+are hidden in the elisp-tred tree.
+
+The collapsed label for a sequence node is its elisp source code text,
+with newlines and consecutive spaces removed, and truncated to a
+maximum length of `elisp-tred-max-label-length' (for performance
+reasons). In the case of truncation, an ellipsis (\"...\") will be
+used to represent the omitted forms. When truncating, we remove entire
+balanced forms, rather than simply chopping the string at the maximum
+character length, to ensure that parentheses remain balanced in the
+elisp-tred buffer."
+  ;; Implementation note: You may be wondering why we have
+  ;; `right-bracket' here but no `left-bracket'. The reason is that we
+  ;; use the left bracket as the icon for the tree node (see
+  ;; `elisp-tred--get-tree-widget').
+  (let* ((right-bracket (elisp-tred--right-bracket-char node))
+         (children (elisp-tred--sequence-children node))
+         (max-len elisp-tred-max-label-length))
+    (concat
+     (catch 'truncated
+       (seq-reduce
+        (lambda (acc child)
+          (let* ((text (treesit-node-text child))
+                 (collapsed (elisp-tred--remove-newlines-and-collapse-spaces text))
+                 (sep (if (string-empty-p acc) "" " "))
+                 (new-acc (concat acc sep collapsed)))
+            (if (> (length new-acc) max-len)
+                (throw 'truncated (concat acc "..."))
+              new-acc)))
+        children
+        ""))
+     right-bracket)))
+
 (defun elisp-tred--get-collapsed-label (node)
   "Return the text label for a treesit node (NODE) when
 it is collapsed."
-  (let* ((label (treesit-node-text node))
-         (truncated (> (length label) elisp-tred-max-label-length))
-         (label (if truncated (substring label 0 elisp-tred-max-label-length) label))
-         (label (if truncated (concat label "...") label))
-         (label (elisp-tred--remove-newlines-and-collapse-spaces label))
+  (let* ((label (if (elisp-tred--sequence-p node)
+                    (elisp-tred--get-collapsed-label-for-sequence node)
+                  (elisp-tred--remove-newlines-and-collapse-spaces
+                   (treesit-node-text node))))
          (num-closing-parens (elisp-tred--calc-number-of-closing-parens node)))
     (concat label
             (make-string num-closing-parens ?\))
@@ -381,25 +426,28 @@ The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
   (if (eql (treesit-node-child-count node) 0)
 	  `(item :tag ,(elisp-tred--get-collapsed-label node))
-    `(tree-widget
-      :node (item :tag ,(elisp-tred--get-collapsed-label node))
-      :treesit-node ,node
-      ;; Below, we explicitly set the keymaps for the tree icon widgets,
-      ;; so that they are the same as the default keymap for the mode
-      ;; (i.e. `elisp-tred--tree-mode-map').
-      ;;
-      ;; This ensures that the keybindings work consistently, regardless
-      ;; of where the cursor happens to be positioned on the current
-      ;; line.
-      ;;
-      ;; For example, I want to ensure that the TAB key always works to
-      ;; toggle the expanded/collapsed state of the node on the current
-      ;; line.
-      :open-icon (tree-widget-open-icon :keymap elisp-tred--tree-mode-map)
-      :close-icon (tree-widget-close-icon :keymap elisp-tred--tree-mode-map)
-      :empty-icon (tree-widget-empty-icon :keymap elisp-tred--tree-mode-map)
-      :leaf-icon (tree-widget-leaf-icon :glyph-name "handle" :keymap elisp-tred--tree-mode-map)
-      :expander elisp-tred--get-child-widgets)))
+    (let* ((quote-char (elisp-tred--quote-char node))
+           (left-bracket (elisp-tred--left-bracket-char node))
+           (tag (concat quote-char left-bracket)))
+      `(tree-widget
+       :node (item :tag ,(elisp-tred--get-collapsed-label node))
+       :treesit-node ,node
+       ;; Below, we explicitly set the keymaps for the tree icon widgets,
+       ;; so that they are the same as the default keymap for the mode
+       ;; (i.e. `elisp-tred--tree-mode-map').
+       ;;
+       ;; This ensures that the keybindings work consistently, regardless
+       ;; of where the cursor happens to be positioned on the current
+       ;; line.
+       ;;
+       ;; For example, I want to ensure that the TAB key always works to
+       ;; toggle the expanded/collapsed state of the node on the current
+       ;; line.
+       :open-icon (tree-widget-open-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred--tree-mode-map)
+       :close-icon (tree-widget-close-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred--tree-mode-map)
+       :empty-icon (tree-widget-empty-icon :keymap elisp-tred--tree-mode-map)
+       :leaf-icon (tree-widget-leaf-icon :tag " " :glyph-name nil :keymap elisp-tred--tree-mode-map)
+       :expander elisp-tred--get-child-widgets))))
 
 (defun elisp-tred--is-last-child (node)
   (when-let* ((parent (treesit-node-parent node))
