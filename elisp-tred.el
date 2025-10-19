@@ -394,13 +394,19 @@ elisp-tred buffer."
      (catch 'truncated
        (seq-reduce
         (lambda (acc child)
-          (let* ((text (treesit-node-text child))
-                 (collapsed (elisp-tred--remove-newlines-and-collapse-spaces text))
-                 (sep (if (string-empty-p acc) "" " "))
-                 (new-acc (concat acc sep collapsed)))
-            (if (> (length new-acc) max-len)
-                (throw 'truncated (concat acc "..."))
-              new-acc)))
+          ;; Omit comments (strings starting with `;') from the
+          ;; collapsed elisp code.  Since comments extend to the end
+          ;; of their line, it doesn't make sense to embed them in the
+          ;; label.
+          (if (equal (treesit-node-type child) "comment")
+              acc
+            (let* ((text (treesit-node-text child))
+                   (collapsed (elisp-tred--remove-newlines-and-collapse-spaces text))
+                   (sep (if (string-empty-p acc) "" " "))
+                   (new-acc (concat acc sep collapsed)))
+              (if (> (length new-acc) max-len)
+                  (throw 'truncated (concat acc "..."))
+                new-acc))))
         children
         ""))
      right-bracket)))
