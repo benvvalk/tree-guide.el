@@ -236,9 +236,9 @@ If NODE is not a treesit node for a quoted form, return `nil'."
 (defvar elisp-tred--tree-mapping-rules
   `(
     ;; If a sequence (list or vector) has two or more elements, and
-    ;; the first element is not a sequence, show the first element as
-    ;; part of the parent node label rather than as it's own child
-    ;; element.
+    ;; the first element is not a sequence or a comment, show the
+    ;; first element as part of the parent node label rather than as
+    ;; it's own child element.
     ;;
     ;; For example, render the list `(one two tree)' as:
     ;;
@@ -256,13 +256,17 @@ If NODE is not a treesit node for a quoted form, return `nil'."
     ;; It's a matter of taste, but I find putting the opening paren
     ;; ("(") on its own line wastes too much vertical space and
     ;; hurts readability of the code.
-    (:description "a sequence (list or vector) with two or more elements, and the first element is not a sequence"
+    (:description "a sequence (list or vector) with two or more elements,
+ and the first element is not a sequence or a comment"
 
      :match-fn
      (lambda (node)
-	   (and (elisp-tred--sequence-p node)
-            (>= (elisp-tred--sequence-length node) 2)
-            (not (elisp-tred--sequence-p (elisp-tred--sequence-car node)))))
+	   (when (and (elisp-tred--sequence-p node)
+                  (>= (elisp-tred--sequence-length node) 2))
+         (let* ((child0 (elisp-tred--sequence-car node))
+                (child0-type (treesit-node-type child0)))
+           (and (not (elisp-tred--sequence-p child0))
+                (not (equal child0-type "comment"))))))
 
      :expanded-label-fn
      (lambda (node)
