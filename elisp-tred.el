@@ -9,11 +9,11 @@ It is important to impose a max length on the tree node labels because
 when a node is collapsed, it shows the full lisp code for its subtree
 in a single line, which can be very long indeed.")
 
-(defvar-keymap elisp-tred--tree-mode-map
+(defvar-keymap elisp-tred-mode-map
   "TAB" #'elisp-tred-toggle-node
   "<backtab>" #'elisp-tred-collapse-parent)
 
-(define-derived-mode elisp-tred--tree-mode special-mode
+(define-derived-mode elisp-tred-mode special-mode
   "TM"
   "Mode for displaying lisp code as a tree."
   nil)
@@ -82,7 +82,7 @@ form surrounding POINT."
               (pos (point))
               (root-node (elisp-tred--get-toplevel-form-at-point)))
     (with-current-buffer tree-buffer
-      (elisp-tred--tree-mode)
+      (elisp-tred-mode)
       ;; Register a callback to update the labels of certain tree
       ;; nodes, when they are expanded or collapsed.
       (setq-local tree-widget-after-toggle-functions
@@ -444,7 +444,7 @@ collapsible UI widget in the tree buffer."
        :treesit-node ,node
        ;; Below, we explicitly set the keymaps for the tree icon widgets,
        ;; so that they are the same as the default keymap for the mode
-       ;; (i.e. `elisp-tred--tree-mode-map').
+       ;; (i.e. `elisp-tred-mode-map').
        ;;
        ;; This ensures that the keybindings work consistently, regardless
        ;; of where the cursor happens to be positioned on the current
@@ -453,10 +453,10 @@ collapsible UI widget in the tree buffer."
        ;; For example, I want to ensure that the TAB key always works to
        ;; toggle the expanded/collapsed state of the node on the current
        ;; line.
-       :open-icon (tree-widget-open-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred--tree-mode-map)
-       :close-icon (tree-widget-close-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred--tree-mode-map)
-       :empty-icon (tree-widget-empty-icon :keymap elisp-tred--tree-mode-map)
-       :leaf-icon (tree-widget-leaf-icon :tag " " :glyph-name nil :keymap elisp-tred--tree-mode-map)
+       :open-icon (tree-widget-open-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred-mode-map)
+       :close-icon (tree-widget-close-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred-mode-map)
+       :empty-icon (tree-widget-empty-icon :keymap elisp-tred-mode-map)
+       :leaf-icon (tree-widget-leaf-icon :tag " " :glyph-name nil :keymap elisp-tred-mode-map)
        :expander elisp-tred--get-child-widgets))))
 
 (defun elisp-tred--is-last-child (node)
