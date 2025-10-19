@@ -294,9 +294,9 @@ not very practical, because it results in a lot of unwanted
 intermediate nodes. So we need to to reshape the parse tree in various
 ways before we show it to the user.
 
- When we are building the elisp-tred from the tree-sitter parse tree,
-we want two things as we visit each tree-sitter node: (1) What text
-should we use to represent the current tree-sitter node in the
+When we are building the elisp-tred from the tree-sitter parse tree,
+we need to know two things as we visit each tree-sitter node: (1) What
+text should we use to represent the current tree-sitter node in the
 elisp-tred tree?, and (2) Which child nodes of the current tree-sitter
 node should we process to generate the children in the elisp tred
 tree?  The purpose of the tree-mapping rules is to answer these two
