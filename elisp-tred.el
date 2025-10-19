@@ -16,7 +16,17 @@ in a single line, which can be very long indeed.")
 (define-derived-mode elisp-tred-mode special-mode
   "TM"
   "Mode for displaying lisp code as a tree."
-  nil)
+  (setq-local
+   ;; Register a callback to update the labels of certain tree
+   ;; nodes, when they are expanded or collapsed.
+   tree-widget-after-toggle-functions '(elisp-tred--update-label)
+
+   ;; Remove default space between tree node icon and
+   ;; label. For lists/vectors, we use the opening
+   ;; bracket "("/"[" for the tree node icon, it looks
+   ;; weird to introduce a space before the list/vector
+   ;; contents.
+   tree-widget-space-width 0))
 
 (defun elisp-tred--get-toplevel-node-with-same-start-pos (node)
   (let* ((start-pos (treesit-node-start node))
@@ -83,16 +93,6 @@ form surrounding POINT."
               (root-node (elisp-tred--get-toplevel-form-at-point)))
     (with-current-buffer tree-buffer
       (elisp-tred-mode)
-      ;; Register a callback to update the labels of certain tree
-      ;; nodes, when they are expanded or collapsed.
-      (setq-local tree-widget-after-toggle-functions
-                  '(elisp-tred--update-label)
-                  ;; Remove default space between tree node icon and
-                  ;; label. For lists/vectors, we use the opening
-                  ;; bracket "("/"[" for the tree node icon, it looks
-                  ;; weird to introduce a space before the list/vector
-                  ;; contents.
-                  tree-widget-space-width 0)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (widget-create (elisp-tred--get-tree-widget root-node))))
