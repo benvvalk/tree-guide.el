@@ -428,13 +428,19 @@ it is collapsed."
             ;; (format " [%s]" (treesit-node-type node))
             )))
 
+(defun elisp-tred--leaf-p (node)
+  "Return t if treesit NODE should be rendered as a leaf in the
+elisp-tred tree."
+  (let ((unquoted (elisp-tred--unquote node)))
+    (eq (treesit-node-child-count unquoted) 0)))
+
 (defun elisp-tred--get-tree-widget (node)
   "Return the tree widget definition corresponding to treesit node
 NODE.
 
 The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
-  (if (eql (treesit-node-child-count node) 0)
+  (if (elisp-tred--leaf-p node)
 	  `(item :tag ,(elisp-tred--get-collapsed-label node))
     (let* ((quote-char (elisp-tred--quote-char node))
            (left-bracket (elisp-tred--left-bracket-char node))
