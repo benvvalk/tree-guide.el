@@ -128,12 +128,31 @@ line."
     (goto-char pos)
     (widget-button-press pos)))
 
+(defun elisp-tred--treesit-node (widget)
+  "Return the treesit node corresponding to WIDGET.
+
+WIDGET can be any one of the following:
+
+* the label widget for a tree node (i.e. the `:node' widget)
+* the icon/button widget for a tree node
+* the main tree widget for a tree node, which is the common
+  `:parent' of the icon and label widgets."
+  (if-let* ((treesit-node (widget-get widget :treesit-node)))
+      ;; WIDGET is the label widget for the tree node (i.e. the
+      ;; `:node' widget)
+      treesit-node
+    ;; WIDGET is either the main tree widget or the icon/button
+    ;; widget. In both cases, the widget has a `:node' property that
+    ;; points to the label widget for the tree node.
+    (when-let* ((node-widget (widget-get widget :node)))
+      (widget-get node-widget :treesit-node))))
+
 (defun elisp-tred--update-label (widget)
   "Update the text label for the given tree node WIDGET.
 
 This function allows showing different labels on a tree node,
 depending on whether the node is collapsed or expanded."
-  (let* ((node (widget-get widget :treesit-node))
+  (let* ((node (elisp-tred--treesit-node widget))
          (node-type (treesit-node-type node)))
     (when t ;(eq node-type "list")
       (let* ((button (widget-get widget :node))
@@ -441,13 +460,14 @@ NODE.
 The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
   (if (elisp-tred--leaf-p node)
-	  `(item :tag ,(elisp-tred--get-collapsed-label node))
+	  `(item :tag ,(elisp-tred--get-collapsed-label node)
+             :treesit-node ,node)
     (let* ((quote-char (elisp-tred--quote-char node))
            (left-bracket (elisp-tred--left-bracket-char node))
            (tag (concat quote-char left-bracket)))
       `(tree-widget
-       :node (item :tag ,(elisp-tred--get-collapsed-label node))
-       :treesit-node ,node
+       :node (item :tag ,(elisp-tred--get-collapsed-label node)
+                   :treesit-node ,node)
        ;; Below, we explicitly set the keymaps for the tree icon widgets,
        ;; so that they are the same as the default keymap for the mode
        ;; (i.e. `elisp-tred-mode-map').
@@ -491,7 +511,7 @@ filtering child nodes, as specified by
 WIDGET.
 
 This function is called when expanding a tree node in the UI."
-  (let* ((node (widget-get widget :treesit-node))
+  (let* ((node (elisp-tred--treesit-node widget))
          (child-nodes (elisp-tred--get-child-nodes node)))
     (mapcar 'elisp-tred--get-tree-widget child-nodes)))
 
