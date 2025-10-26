@@ -125,7 +125,8 @@ form surrounding POINT."
               (root-node (elisp-tred--get-toplevel-form-at-point)))
     (with-current-buffer tree-buffer
       (elisp-tred-mode)
-      (let ((inhibit-read-only t))
+      (let ((inhibit-read-only t)
+            (tree-widget-image-enable nil))
         (erase-buffer)
         (widget-create (elisp-tred--get-tree-widget root-node))))
     ;; Default to displaying the tree buffer in the same window as the
@@ -183,7 +184,8 @@ form surrounding POINT."
     (let* ((open (widget-get tree-widget :open))
            (new-label (if open
                           (elisp-tred--get-collapsed-label treesit-node)
-                        (elisp-tred--get-expanded-label treesit-node))))
+                        (elisp-tred--get-expanded-label treesit-node)))
+           (tree-widget-image-enable nil))
       ;; Update the tree node label
       (widget-put label-widget :tag new-label)
       ;; Toggle the :open property
@@ -531,16 +533,24 @@ collapsible UI widget in the tree buffer."
         :tag ,(elisp-tred--get-collapsed-label node)
         :treesit-node ,node
         :leaf-p t)
-    `(tree-widget
-      :node (elisp-tred-node-label
-             :tag ,(elisp-tred--get-collapsed-label node)
-             :treesit-node ,node
-             :leaf-p nil)
-      :open-icon (elisp-tred-empty-icon)
-      :close-icon (elisp-tred-empty-icon)
-      :empty-icon (elisp-tred-empty-icon)
-      :leaf-icon (elisp-tred-empty-icon)
-      :expander elisp-tred--get-child-widgets)))
+    (let ((half-width-space (propertize " " 'display '(space :width 0.5)))
+          (shadow-face (lambda (text) (propertize text 'face 'shadow))))
+      `(tree-widget
+       :node (elisp-tred-node-label
+              :tag ,(elisp-tred--get-collapsed-label node)
+              :treesit-node ,node
+              :leaf-p nil)
+       :open-icon (elisp-tred-empty-icon)
+       :close-icon (elisp-tred-empty-icon)
+       :empty-icon (elisp-tred-empty-icon)
+       :leaf-icon (elisp-tred-empty-icon)
+       :guide (tree-widget-guide :tag ,(funcall shadow-face "├"))
+       :no-guide (tree-widget-guide :tag ,(funcall shadow-face " "))
+       :nohandle-guide (tree-widget-guide :tag ,(funcall shadow-face "│"))
+       :handle (tree-widget-guide :tag  ,(funcall shadow-face (concat "─" half-width-space)))
+       :no-handle (tree-widget-guide :tag ,(funcall shadow-face (concat " " half-width-space)))
+       :end-guide (tree-widget-guide :tag ,(funcall shadow-face "╰"))
+       :expander elisp-tred--get-child-widgets))))
 
 (defun elisp-tred--is-last-child (node)
   (when-let* ((parent (treesit-node-parent node))
