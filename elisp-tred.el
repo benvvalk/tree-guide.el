@@ -1,4 +1,5 @@
 (require 'treesit)
+(require 'tree-widget)
 
 (defvar-local elisp-tred-max-label-length 128
   "The maximum length of a tree node label. For the sake of
