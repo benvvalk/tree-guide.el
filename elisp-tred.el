@@ -17,16 +17,47 @@ in a single line, which can be very long indeed.")
   "TM"
   "Mode for displaying lisp code as a tree."
   (setq-local
-   ;; Register a callback to update the labels of certain tree
-   ;; nodes, when they are expanded or collapsed.
-   tree-widget-after-toggle-functions '(elisp-tred--update-label)
-
    ;; Remove default space between tree node icon and
    ;; label. For lists/vectors, we use the opening
    ;; bracket "("/"[" for the tree node icon, it looks
    ;; weird to introduce a space before the list/vector
    ;; contents.
    tree-widget-space-width 0))
+
+(define-widget 'elisp-tred-node-label 'item
+  "A custom widget that is used for the tree node labels.
+
+This is widget is the same as an `item' widget, except that I add a
+`button' overlay so that `widget-forward' will jump to it. (By
+default, `widget-forward' only jumps to interactive widgets such as
+buttons and editable fields.)"
+  :create 'elisp-tred--node-label-create)
+
+(defun elisp-tred--node-label-create (widget)
+  "Create an item widget with a `button' overlay, so that
+`widget-forward' will jump to it. (By default, `widget-forward' only
+jumps to interactive widgets such as buttons and editable fields.)"
+  (widget-default-create widget)
+  ;; Add a `button' overlay so we can use `widget-forward' to jump to
+  ;; our tree node labels. For example, I use `widget-forward' to
+  ;; implement `elisp-tred--node-widget-for-current-line'.
+  ;;
+  ;; Normally, `widget-forward' advances the cursor to the next
+  ;; *interactive* widget in the buffer (i.e. a button or a field).
+  (when-let* ((from (widget-get widget :from))
+              (to (widget-get widget :to)))
+    (let ((overlay (make-overlay from to)))
+      (overlay-put overlay 'button widget)
+      (overlay-put overlay 'evaporate t))))
+
+(define-widget 'elisp-tred-empty-icon 'tree-widget-icon
+  "Empty (zero-width) icon widget.
+
+By default, tree-widget.el renders diamond-shaped button widgets for
+each tree node, which can be mouse-clicked to expand/collapse the
+nodes. I like the look/feel of the tree much better without the button
+widgets, so I use this zero-width icon to hide them."
+  :tag "")
 
 (defun elisp-tred--get-toplevel-node-with-same-start-pos (node)
   (let* ((start-pos (treesit-node-start node))
@@ -110,13 +141,54 @@ form surrounding POINT."
                  (equal line-number (line-number-at-pos (point))))
 		(widget-at (point))))))
 
+(defun elisp-tred--node-widget-for-current-line ()
+  (save-excursion
+    (beginning-of-line)
+    (let* ((line-number (line-number-at-pos (point)))
+           (widget (widget-at)))
+      ;; Find the last widget on the current line.
+      ;; If we are rendering an icon/button widget for each tree node,
+      ;; that widget will appear before (to the left of) the node
+      ;; widget.
+      ;;
+      ;; Note `widget-forward' throws an error if there are no more
+      ;; widgets in the buffer, so we surround the `widget-forward'
+      ;; calls with `condition-case' and fall through on the first
+      ;; error.
+      (condition-case nil
+          (progn
+            (widget-forward 1)
+            (while (and (widget-at) (= line-number (line-number-at-pos)))
+              (setq widget (widget-at))
+              (widget-forward 1)))
+        (error)) ; if widget-forward fails, fall through
+      widget)))
+
+(defun elisp-tred--tree-widget-for-current-line ()
+  (when-let* ((node-widget (elisp-tred--node-widget-for-current-line)))
+    ;; For internal tree-widget nodes, `:parent' points to a tree
+    ;; widget for the current line. For leaf nodes, `:parent' points to
+    ;; the tree widget for the parent in the tree, which is on a
+    ;; different line. Pretty confusing!
+    (unless (widget-get node-widget :leaf-p)
+      (widget-get node-widget :parent))))
+
 (defun elisp-tred-toggle-node ()
-  "Toggle the expanded/collapsed state of the tree node on the current
-line."
+  "Toggle the expanded/collapsed state of the tree node on the current line."
   (interactive)
-  (when-let* ((icon-widget (elisp-tred--get-icon-widget-for-current-line))
-              (pos (widget-get icon-widget :from)))
-    (widget-button-press pos)))
+  (when-let* ((tree-widget (elisp-tred--tree-widget-for-current-line))
+              (label-widget (widget-get tree-widget :node))
+              (treesit-node (elisp-tred--treesit-node tree-widget)))
+    (let* ((open (widget-get tree-widget :open))
+           (new-label (if open
+                          (elisp-tred--get-collapsed-label treesit-node)
+                        (elisp-tred--get-expanded-label treesit-node))))
+      ;; Update the tree node label
+      (widget-put label-widget :tag new-label)
+      ;; Toggle the :open property
+      (widget-put tree-widget :open (not open))
+      ;; Redraw the widget
+      (widget-apply tree-widget :value-set (not open)))))
 
 (defun elisp-tred-collapse-parent ()
   "Move up to the parent tree node (if any) and collapse it."
@@ -146,24 +218,6 @@ WIDGET can be any one of the following:
     ;; points to the label widget for the tree node.
     (when-let* ((node-widget (widget-get widget :node)))
       (widget-get node-widget :treesit-node))))
-
-(defun elisp-tred--update-label (widget)
-  "Update the text label for the given tree node WIDGET.
-
-This function allows showing different labels on a tree node,
-depending on whether the node is collapsed or expanded."
-  (let* ((node (elisp-tred--treesit-node widget))
-         (node-type (treesit-node-type node)))
-    (when t ;(eq node-type "list")
-      (let* ((button (widget-get widget :node))
-             (open (widget-get widget :open))
-             (new-label (if open
-                            (elisp-tred--get-expanded-label node)
-                          (elisp-tred--get-collapsed-label node))))
-        (widget-put button :tag new-label)
-        ;; HACK: I don't understand what the line below does, but it's
-        ;; necessary in order for the tree widget label to be updated.
-        (widget-value-set widget open)))))
 
 (defun elisp-tred--remove-newlines-and-collapse-spaces (str)
   "Remove all newlines and collapse duplicate spaces in STR."
@@ -293,7 +347,9 @@ If NODE is not a treesit node for a quoted form, return `nil'."
          (when-let* ((left-bracket (elisp-tred--left-bracket-char node))
                      (child0 (elisp-tred--sequence-car node))
                      (child0-text (treesit-node-text child0)))
-           child0-text)))
+           (concat quote-char
+                   left-bracket
+                   child0-text))))
 
      :child-nodes-fn
      (lambda (node)
@@ -302,7 +358,13 @@ If NODE is not a treesit node for a quoted form, return `nil'."
     (:description "a sequence (list or vector) or quoted sequence"
      :match-fn
      (lambda (node)
-       (elisp-tred--sequence-p node)))
+       (elisp-tred--sequence-p node))
+     :expanded-label-fn
+     (lambda (node)
+       (let* ((quote-char (elisp-tred--quote-char node)))
+         (when-let* ((left-bracket (elisp-tred--left-bracket-char node)))
+           (concat quote-char left-bracket)))))
+
 
     )
 
@@ -410,10 +472,14 @@ elisp-tred buffer."
   ;; `right-bracket' here but no `left-bracket'. The reason is that we
   ;; use the left bracket as the icon for the tree node (see
   ;; `elisp-tred--get-tree-widget').
-  (let* ((right-bracket (elisp-tred--right-bracket-char node))
+  (let* ((quote-char (elisp-tred--quote-char node))
+         (left-bracket (elisp-tred--left-bracket-char node))
+         (right-bracket (elisp-tred--right-bracket-char node))
          (children (elisp-tred--sequence-children node))
          (max-len elisp-tred-max-label-length))
     (concat
+     quote-char
+     left-bracket
      (catch 'truncated
        (seq-reduce
         (lambda (acc child)
@@ -460,30 +526,20 @@ NODE.
 The tree widget definition is used render the treesit nodes as
 collapsible UI widget in the tree buffer."
   (if (elisp-tred--leaf-p node)
-	  `(item :tag ,(elisp-tred--get-collapsed-label node)
-             :treesit-node ,node)
-    (let* ((quote-char (elisp-tred--quote-char node))
-           (left-bracket (elisp-tred--left-bracket-char node))
-           (tag (concat quote-char left-bracket)))
-      `(tree-widget
-       :node (item :tag ,(elisp-tred--get-collapsed-label node)
-                   :treesit-node ,node)
-       ;; Below, we explicitly set the keymaps for the tree icon widgets,
-       ;; so that they are the same as the default keymap for the mode
-       ;; (i.e. `elisp-tred-mode-map').
-       ;;
-       ;; This ensures that the keybindings work consistently, regardless
-       ;; of where the cursor happens to be positioned on the current
-       ;; line.
-       ;;
-       ;; For example, I want to ensure that the TAB key always works to
-       ;; toggle the expanded/collapsed state of the node on the current
-       ;; line.
-       :open-icon (tree-widget-open-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred-mode-map)
-       :close-icon (tree-widget-close-icon :tag ,tag :glyph-name nil :button-face default :keymap elisp-tred-mode-map)
-       :empty-icon (tree-widget-empty-icon :keymap elisp-tred-mode-map)
-       :leaf-icon (tree-widget-leaf-icon :tag " " :glyph-name nil :keymap elisp-tred-mode-map)
-       :expander elisp-tred--get-child-widgets))))
+	  `(elisp-tred-node-label
+        :tag ,(elisp-tred--get-collapsed-label node)
+        :treesit-node ,node
+        :leaf-p t)
+    `(tree-widget
+      :node (elisp-tred-node-label
+             :tag ,(elisp-tred--get-collapsed-label node)
+             :treesit-node ,node
+             :leaf-p nil)
+      :open-icon (elisp-tred-empty-icon)
+      :close-icon (elisp-tred-empty-icon)
+      :empty-icon (elisp-tred-empty-icon)
+      :leaf-icon (elisp-tred-empty-icon)
+      :expander elisp-tred--get-child-widgets)))
 
 (defun elisp-tred--is-last-child (node)
   (when-let* ((parent (treesit-node-parent node))
