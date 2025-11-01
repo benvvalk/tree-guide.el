@@ -151,7 +151,8 @@ form surrounding POINT."
       (let ((inhibit-read-only t)
             (tree-widget-image-enable nil))
         (erase-buffer)
-        (widget-create (elisp-tred--get-tree-widget root-node))))
+        (widget-create (elisp-tred--get-tree-widget root-node))
+        (elisp-tred--goto-source-code-pos-in-tree pos)))
     ;; Default to displaying the tree buffer in the same window as the
     ;; elisp source buffer, unless the user overrides it in their
     ;; `display-buffer-alist'.
