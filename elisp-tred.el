@@ -1,3 +1,26 @@
+;; Some notes about `tree-widget.el':
+;;
+;; This mode uses Emacs' built-in `tree-widget.el' to render the
+;; interactive tree. `tree-widget.el' is battle-hardened and
+;; versatile, but it's internal data structures can be difficult to
+;; understand. As a reminder to myself and others, here are a few
+;; notes:
+;;
+;; Internal (non-leaf) tree nodes have THREE widgets:
+;; 1. Main tree-widget - the container widget, has :open/:args/:node/:children/:buttons properties
+;; 2. Icon widget - the [+]/[-] button, stored in :buttons, :parent points to main tree-widget
+;; 3. Node widget - the label, first element of :children, :parent points to main tree-widget
+;;
+;; There is no container tree-widget for leaf nodes. Leaf nodes are
+;; bare widgets of any type (e.g. an `item' widget).
+;;
+;; For internal nodes, the main tree widget has no visible
+;; representation in the buffer, and it can only be accessed through
+;; the `:parent' property of the icon and node widgets. In the case of
+;; `elisp-tred', I hide the icon widgets by using a custom zero-width
+;; widget called `elisp-tred-empty-icon', so it is only the node
+;; widgets that actually have a representation in the buffer.
+
 (require 'treesit)
 (require 'tree-widget)
 
