@@ -189,7 +189,16 @@ form surrounding POINT."
         (error)) ; if widget-forward fails, fall through
       widget)))
 
+(defun elisp-tred--treesit-node-for-current-line ()
+  (when-let* ((node-widget (elisp-tred--node-widget-for-current-line)))
+    (elisp-tred--treesit-node node-widget)))
+
 (defun elisp-tred--tree-widget-for-current-line ()
+  "Return the main tree widget on the current-line, if any.
+
+This function will return `nil' if we are on a line that represents a
+leaf node in the tree. Leaf node lines don't have a tree widget, they only
+have a `item' widget that is used for the tree node label."
   (when-let* ((node-widget (elisp-tred--node-widget-for-current-line)))
     ;; For internal tree-widget nodes, `:parent' points to a tree
     ;; widget for the current line. For leaf nodes, `:parent' points to
@@ -611,5 +620,56 @@ This function is called when expanding a tree node in the UI."
   (let* ((node (elisp-tred--treesit-node widget))
          (child-nodes (elisp-tred--get-child-nodes node)))
     (mapcar 'elisp-tred--get-tree-widget child-nodes)))
+
+(defun elisp-tred--node-contains-pos (node pos)
+  "Return t if treesit NODE contains buffer position POS."
+  (and node
+       (>= pos (treesit-node-start node))
+       (<= pos (treesit-node-end node))))
+
+(defun elisp-tred--expand-tree-widget-if-needed (icon-widget)
+  "Expand ICON-WIDGET if it is currently collapsed."
+  (unless (widget-get icon-widget :open)
+    (when-let* ((icon-widget (car (widget-get icon-widget :buttons)))
+                (pos (widget-get icon-widget :from)))
+        (widget-button-press pos))))
+
+(defun elisp-tred--goto-source-code-pos-in-tree (pos)
+  "Navigate to the deepest (leaf-most) tree node that corresponds
+to buffer position POS in the elisp source code buffer, expanding
+ancestor tree nodes as needed. Then navigate to the exact position
+within the tree node label that corresponds to POS."
+  (goto-char (point-min))
+  ;; Find the line of deepest (leaf-most) tree node containing POS.
+  (catch 'done
+    (while (not (eobp))
+      (when-let* ((node (elisp-tred--treesit-node-for-current-line)))
+        (when (elisp-tred--node-contains-pos node pos)
+          ;; Check if any child node also contains POS
+          (let ((child-nodes (elisp-tred--get-child-nodes node))
+                (found-child nil))
+            (dolist (child child-nodes)
+              (when (elisp-tred--node-contains-pos child pos)
+                (setq found-child t)))
+
+            (if found-child
+                ;; One of the children is a better match, so expand
+                ;; the tree widget on the current line and fall through
+                ;; to continue searching on subsequent lines.
+                (elisp-tred--set-tree-widget-expanded
+                 (elisp-tred--tree-widget-for-current-line) t)
+              ;; Found the target node, move point to exact position in label
+              (let* ((node-widget (elisp-tred--node-widget-for-current-line))
+                     (node-start (treesit-node-start node))
+                     (label-start (widget-get node-widget :from))
+                     (label-end (widget-get node-widget :to))
+                     ;; Calculate offset of POS within the source node
+                     (offset-in-node (- pos node-start))
+                     ;; Calculate the target position in the tree buffer label
+                     (target-pos (+ label-start offset-in-node)))
+                ;; Clamp to label boundaries to handle edge cases
+                (goto-char (min (max target-pos label-start) (1- label-end))))
+              (throw 'done t)))))
+      (forward-line 1))))
 
 (provide 'elisp-tred)
