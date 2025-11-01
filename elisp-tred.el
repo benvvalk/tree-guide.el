@@ -198,23 +198,30 @@ form surrounding POINT."
     (unless (widget-get node-widget :leaf-p)
       (widget-get node-widget :parent))))
 
-(defun elisp-tred-toggle-node ()
-  "Toggle the expanded/collapsed state of the tree node on the current line."
-  (interactive)
-  (when-let* ((tree-widget (elisp-tred--tree-widget-for-current-line))
-              (label-widget (widget-get tree-widget :node))
+(defun elisp-tred--set-tree-widget-expanded (tree-widget expanded)
+  "Set the expanded/collapsed state of TREE-WIDGET.
+
+When EXPANDED is non-nil, expand the tree widget and show its children.
+When EXPANDED is nil, collapse the tree widget and hide its children."
+  (when-let* ((label-widget (widget-get tree-widget :node))
               (treesit-node (elisp-tred--treesit-node tree-widget)))
-    (let* ((open (widget-get tree-widget :open))
-           (new-label (if open
-                          (elisp-tred--get-collapsed-label treesit-node)
-                        (elisp-tred--get-expanded-label treesit-node)))
+    (let* ((new-label (if expanded
+                          (elisp-tred--get-expanded-label treesit-node)
+                        (elisp-tred--get-collapsed-label treesit-node)))
            (tree-widget-image-enable nil))
       ;; Update the tree node label
       (widget-put label-widget :tag new-label)
-      ;; Toggle the :open property
-      (widget-put tree-widget :open (not open))
+      ;; Update the :open property
+      (widget-put tree-widget :open expanded)
       ;; Redraw the widget
-      (widget-apply tree-widget :value-set (not open)))))
+      (widget-apply tree-widget :value-set expanded))))
+
+(defun elisp-tred-toggle-node ()
+  "Toggle the expanded/collapsed state of the tree node on the current line."
+  (interactive)
+  (when-let* ((tree-widget (elisp-tred--tree-widget-for-current-line)))
+    (let ((open (widget-get tree-widget :open)))
+      (elisp-tred--set-tree-widget-expanded tree-widget (not open)))))
 
 (defun elisp-tred-collapse-parent ()
   "Move up to the parent tree node (if any) and collapse it."
