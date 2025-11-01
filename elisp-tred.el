@@ -35,7 +35,8 @@ in a single line, which can be very long indeed.")
 
 (defvar-keymap elisp-tred-mode-map
   "TAB" #'elisp-tred-toggle-node
-  "<backtab>" #'elisp-tred-collapse-parent)
+  "<backtab>" #'elisp-tred-collapse-parent
+  "RET" #'elisp-tred-jump-to-source-buffer)
 
 (define-derived-mode elisp-tred-mode special-mode
   "TM"
@@ -672,5 +673,27 @@ within the tree node label that corresponds to POS."
                 (goto-char (min (max target-pos label-start) (1- label-end))))
               (throw 'done t)))))
       (forward-line 1))))
+
+(defun elisp-tred-jump-to-source-buffer ()
+  "Jump to the position in the elisp source code buffer that corresponds
+to the current cursor position in the elisp-tred buffer."
+  (interactive)
+  (when-let* ((node-widget (elisp-tred--node-widget-for-current-line))
+              (node (elisp-tred--treesit-node node-widget))
+              (source-buffer (treesit-node-buffer node)))
+    (let* ((label-start (widget-get node-widget :from))
+           (label-end (widget-get node-widget :to))
+           (cursor-pos (point))
+           ;; Calculate offset of cursor within the label
+           (offset-in-label (- cursor-pos label-start))
+           ;; Calculate the target position in the source buffer
+           (node-start (treesit-node-start node))
+           (node-end (treesit-node-end node))
+           (target-pos (+ node-start offset-in-label)))
+      ;; Clamp to node boundaries to handle edge cases
+      (let ((clamped-pos (min (max target-pos node-start) (1- node-end))))
+        (with-current-buffer source-buffer
+            (goto-char clamped-pos))
+        (display-buffer source-buffer '(display-buffer-same-window))))))
 
 (provide 'elisp-tred)
