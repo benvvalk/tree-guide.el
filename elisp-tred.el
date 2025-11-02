@@ -314,7 +314,8 @@ of the sequence except the first. Otherwise, return `nil'."
 
 (defun elisp-tred--left-bracket-char (node)
   "If NODE is a treesit node for a sequence (list or vector) or a
-quoted sequence, return a string containing the left (opening) bracket character.
+quoted sequence, return a string containing the left (opening) bracket
+character.
 
 For lists and quoted lists, the return value is \"(\".
 
@@ -329,7 +330,8 @@ For vectors and quoted vectors, the return value is \"[\"."
 
 (defun elisp-tred--right-bracket-char (node)
   "If NODE is a treesit node for a sequence (list or vector) or a
-quoted sequence, return a string containing the right (closing) bracket character.
+quoted sequence, return a string containing the right (closing)
+bracket character.
 
 For lists and quoted lists, the return value is \")\".
 
