@@ -36,7 +36,12 @@ in a single line, which can be very long indeed.")
 (defvar-keymap elisp-tred-mode-map
   "TAB" #'elisp-tred-toggle-node
   "<backtab>" #'elisp-tred-collapse-parent
-  "RET" #'elisp-tred-jump-to-source-buffer)
+  "RET" #'elisp-tred-jump-to-source-buffer
+  "n" #'elisp-tred-goto-next-sibling
+  "p" #'elisp-tred-goto-prev-sibling
+  "f" #'elisp-tred-goto-first-child
+  "b" #'elisp-tred-goto-parent
+  "B" #'elisp-tred-goto-parent-and-collapse)
 
 (define-derived-mode elisp-tred-mode special-mode
   "TM"
@@ -216,16 +221,23 @@ When EXPANDED is non-nil, expand the tree widget and show its children.
 When EXPANDED is nil, collapse the tree widget and hide its children."
   (when-let* ((label-widget (widget-get tree-widget :node))
               (treesit-node (elisp-tred--treesit-node tree-widget)))
-    (let* ((new-label (if expanded
-                          (elisp-tred--get-expanded-label treesit-node)
-                        (elisp-tred--get-collapsed-label treesit-node)))
-           (tree-widget-image-enable nil))
-      ;; Update the tree node label
-      (widget-put label-widget :tag new-label)
-      ;; Update the :open property
-      (widget-put tree-widget :open expanded)
-      ;; Redraw the widget
-      (widget-apply tree-widget :value-set expanded))))
+    ;; Do nothing if `expanded' already matches the current
+    ;; expanded/collapsed state of the tree-widget. I noticed that if
+    ;; I re-expand an already-expanded tree widget, it resets all the
+    ;; children to a collapsed state. This probably has something to
+    ;; do with saving child states, but I'm not familiar with how that
+    ;; part of `tree-widget.el' works yet.
+    (when (not (equal expanded (widget-get tree-widget :open)))
+      (let* ((new-label (if expanded
+                           (elisp-tred--get-expanded-label treesit-node)
+                         (elisp-tred--get-collapsed-label treesit-node)))
+            (tree-widget-image-enable nil))
+       ;; Update the tree node label
+       (widget-put label-widget :tag new-label)
+       ;; Update the :open property
+       (widget-put tree-widget :open expanded)
+       ;; Redraw the widget
+       (widget-apply tree-widget :value-set expanded)))))
 
 (defun elisp-tred-toggle-node ()
   "Toggle the expanded/collapsed state of the tree node on the current line."
@@ -243,6 +255,140 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
               (pos (widget-get parent-tree-widget :from)))
     (goto-char pos)
     (widget-button-press pos)))
+
+(defun elisp-tred--search (next-fn predicate-fn)
+  "A general purpose function for searching through the elisp-tred
+buffer, which is used to implement most of elisp-tred's
+navigation commands (e.g. `elisp-tred-goto-next-sibling').
+The return value of the buffer position of the next match,
+or nil if no match was found.
+
+NEXT-FN is a zero-argument function that moves to the next search
+candidate in the buffer (e.g. `(lambda () (forward-line 1))').
+The search return nil (no match found) if NEXT-FN fails to change
+the cursor position (e.g. calling `(forward-line 1)' while the
+cursor is positioned at the end of buffer.)
+
+PREDICATE-FN is a zero-argument function that returns non-nil if the
+current search candidate (i.e. the current cursor position) is a match
+for the search. For example, PREDICATE-FN might be an equality check
+of a particular treesit node against
+`elisp-tred--treesit-node-for-current-line'."
+  (catch 'done
+    (save-excursion
+      (let (prev-pos)
+        (while (if prev-pos (/= (point) prev-pos) t)
+          (setq prev-pos (point))
+          (funcall next-fn)
+          (when (funcall predicate-fn)
+            (throw 'done (point))))))))
+
+(defun elisp-tred-goto-prev-visible-node ()
+  "Go to the previous visible tree node widget (i.e. tree node label)
+in the buffer, and position the cursor on the first character of the
+label.
+
+The word \"visible\" here means that children of collapsed tree nodes
+ will be skipped."
+  (interactive)
+  (let ((next-fn (lambda () (forward-line -1)))
+        (predicate-fn #'elisp-tred--node-widget-for-current-line))
+    (when-let* ((match-pos (elisp-tred--search next-fn predicate-fn)))
+      (goto-char match-pos)
+      (when-let* ((label-widget (elisp-tred--node-widget-for-current-line))
+                  (label-start-pos (widget-get label-widget :from)))
+		(goto-char label-start-pos)))))
+
+(defun elisp-tred-goto-next-visible-node ()
+  "Go to the next visible tree node widget (i.e. tree node label) in
+the buffer, and position the cursor on the first character of the
+label.
+
+The word \"visible\" here means that children of collapsed tree nodes
+ will be skipped."
+  (interactive)
+  (let ((next-fn (lambda () (forward-line 1)))
+        (predicate-fn #'elisp-tred--node-widget-for-current-line))
+    (when-let* ((match-pos (elisp-tred--search next-fn predicate-fn)))
+      (goto-char match-pos)
+      (when-let* ((label-widget (elisp-tred--node-widget-for-current-line))
+                  (label-start-pos (widget-get label-widget :from)))
+		(goto-char label-start-pos)))))
+
+(defun elisp-tred--search-visible-treesit-nodes-backward (node)
+  "Go to the previous visible tree node widget (i.e. tree node label)
+that corresponds to treesit node NODE.
+
+The word \"visible\" here means that children of collapsed tree nodes
+ will be skipped."
+  (let ((next-fn #'elisp-tred-goto-prev-visible-node)
+        (predicate-fn (lambda () (treesit-node-eq (elisp-tred--treesit-node-for-current-line) node))))
+	(elisp-tred--search next-fn predicate-fn)))
+
+(defun elisp-tred--search-visible-treesit-nodes-forward (node)
+  "Go to the next visible tree node widget (i.e. tree node label)
+that corresponds to treesit node NODE.
+
+The word \"visible\" here means that children of collapsed tree nodes
+ will be skipped."
+  (let ((next-fn #'elisp-tred-goto-next-visible-node)
+        (predicate-fn (lambda () (treesit-node-eq (elisp-tred--treesit-node-for-current-line) node))))
+	(elisp-tred--search next-fn predicate-fn)))
+
+(defun elisp-tred-goto-prev-sibling ()
+  "Move the cursor to the prev sibling node in the tree.
+Position the cursor on the first character of the tree node label.
+If there is no prev sibling, leave the cursor where it is and
+display a message."
+  (interactive)
+  (if-let* ((node (elisp-tred--treesit-node-for-current-line))
+            (prev-sibling (elisp-tred--get-prev-sibling-node node))
+            (match-pos (elisp-tred--search-visible-treesit-nodes-backward prev-sibling)))
+      (goto-char match-pos)
+    (user-error "No prev sibling")))
+
+(defun elisp-tred-goto-next-sibling ()
+  "Move the cursor to the next sibling node in the tree.
+Position the cursor on the first character of the tree node label.
+If there is no next sibling, leave the cursor where it is and
+display a message."
+  (interactive)
+  (if-let* ((node (elisp-tred--treesit-node-for-current-line))
+            (next-sibling (elisp-tred--get-next-sibling-node node))
+            (match-pos (elisp-tred--search-visible-treesit-nodes-forward next-sibling)))
+      (goto-char match-pos)
+    (user-error "No next sibling")))
+
+(defun elisp-tred-goto-parent ()
+  "Move the cursor to the parent node in the tree.  Position the
+cursor on the first character of the tree node label. If there is no
+parent, leave the cursor where it is and display a message."
+  (interactive)
+  (if-let* ((node (elisp-tred--treesit-node-for-current-line))
+            (parent (treesit-node-parent node))
+            (match-pos (elisp-tred--search-visible-treesit-nodes-backward parent)))
+      (goto-char match-pos)
+    (user-error "No parent")))
+
+(defun elisp-tred-goto-parent-and-collapse ()
+  "Move the cursor to the parent node in the tree.  Position the
+cursor on the first character of the tree node label. If there is no
+parent, leave the cursor where it is and display a message."
+  (interactive)
+  (elisp-tred-goto-parent)
+  (when-let* ((tree-widget (elisp-tred--tree-widget-for-current-line)))
+    (elisp-tred--set-tree-widget-expanded tree-widget nil)))
+
+(defun elisp-tred-goto-first-child ()
+  "Move the cursor to the cursor to the first child of the current
+node, expanding the current node as needed. If the current node has no
+children (i.e. it is a leaf node), leave the cursor where it is and
+show a message."
+  (interactive)
+  (if-let ((tree-widget (elisp-tred--tree-widget-for-current-line)))
+      (progn (elisp-tred--set-tree-widget-expanded tree-widget t)
+             (elisp-tred-goto-next-visible-node))
+    (user-error "No children")))
 
 (defun elisp-tred--treesit-node (widget)
   "Return the treesit node corresponding to WIDGET.
@@ -606,15 +752,54 @@ collapsible UI widget in the tree buffer."
 (defun elisp-tred--get-child-nodes (node)
   "Return the child nodes of NODE.
 
-Note that this function doesn't not necessarily return the same thing
-as `(treesit-node-children node)'. It implements custom rules for
-filtering child nodes, as specified by
-`elisp-tred--tree-mapping-rules'.
-"
+This function is similar to Emacs' built-in `treesit-node-children',
+except that it implements the custom rules for selecting child nodes
+from `elisp-tred--tree-mapping-rules'."
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
             (child-nodes-fn (plist-get rule :child-nodes-fn)))
       (funcall child-nodes-fn node)
     (treesit-node-children node t)))
+
+(defun elisp-tred--get-sibling-nodes (node)
+  "Return the siblings of treesit node NODE.
+
+This function is similar to doing `(treesit-node-children
+(treesit-node-parent node))', except that it follows the parent/child
+relationships of the elisp-tred tree, rather than the tree-sitter
+tree.  (The mapping between the elisp-tred tree and the tree-sitter
+tree is dictated by `elisp-tred--tree-mapping-rules'.)"
+  (when-let* ((parent-node (treesit-node-parent node)))
+    (elisp-tred--get-child-nodes parent-node)))
+
+(defun elisp-tred--get-next-sibling-node (node)
+  "Return the next sibling of treesit node NODE.
+
+This function is similar to Emacs' built-in
+`treesit-node-next-sibling', except that it follows the parent/child
+relationships of the elisp-tred tree, rather than the tree-sitter
+tree. (The mapping between the elisp-tred tree and the tree-sitter
+tree is dictated by `elisp-tred--tree-mapping-rules'.)"
+  (when-let* ((siblings (elisp-tred--get-sibling-nodes node))
+              (sibling-index (seq-position siblings node))
+              (next-sibling-index (1+ sibling-index)))
+    ;; Note: `nth' returns nil if index is greater than list length.
+    (nth next-sibling-index siblings)))
+
+(defun elisp-tred--get-prev-sibling-node (node)
+  "Return the previous sibling of treesit node NODE.
+
+This function is similar to Emacs' built-in
+`treesit-node-prev-sibling', except that it follows the parent/child
+relationships of the elisp-tred tree, rather than the tree-sitter
+tree. (The mapping between the elisp-tred tree and the tree-sitter
+tree is dictated by `elisp-tred--tree-mapping-rules'.)"
+  (when-let* ((siblings (elisp-tred--get-sibling-nodes node))
+              (sibling-index (seq-position siblings node))
+              (next-sibling-index (1- sibling-index)))
+    ;; Note: When index is negative, `nth' returns the first element
+    ;; of the list, which is not what we want.
+    (when (>= next-sibling-index 0)
+      (nth next-sibling-index siblings))))
 
 (defun elisp-tred--get-child-widgets (widget)
   "Get the widget definitions for the children of the given tree node
