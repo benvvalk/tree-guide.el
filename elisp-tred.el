@@ -34,6 +34,9 @@ It is important to impose a max length on the tree node labels because
 when a node is collapsed, it shows the full lisp code for its subtree
 in a single line, which can be very long indeed.")
 
+(defvar-local elisp-tred--current-node-overlay nil
+  "Overlay used to highlight the tree node label on the current line.")
+
 (defvar-keymap elisp-tred-mode-map
   "TAB" #'elisp-tred-toggle-node
   "RET" #'elisp-tred-jump-to-source-buffer
@@ -55,7 +58,10 @@ in a single line, which can be very long indeed.")
    ;; bracket "("/"[" for the tree node icon, it looks
    ;; weird to introduce a space before the list/vector
    ;; contents.
-   tree-widget-space-width 0))
+   tree-widget-space-width 0)
+  ;; Add hook to highlight node label on current line
+  ;; (automatically updates when cursor moves)
+  (add-hook 'post-command-hook #'elisp-tred--update-current-node-highlight nil t))
 
 (define-widget 'elisp-tred-node-label 'item
   "A custom widget that is used for the tree node labels.
@@ -400,6 +406,30 @@ show a message."
       (progn (elisp-tred--set-tree-widget-expanded tree-widget t)
              (elisp-tred-goto-first-child))
     (user-error "No children")))
+
+(defun elisp-tred--update-current-node-highlight ()
+  "Update the overlay that highlights the tree node label on the current line.
+Creates the overlay if it doesn't exist, or moves it to the current line's
+node widget if it does exist. Removes the overlay if no node widget is found
+on the current line."
+  (when-let* ((node-widget (elisp-tred--node-widget-for-current-line))
+              (start (widget-get node-widget :from))
+              (end (widget-get node-widget :to)))
+    ;; Exclude the trailing newline from the highlight by using (1- end).
+    ;; Widget boundaries include the newline that follows the widget text.
+    (let ((highlight-end (1- end)))
+      ;; Create overlay if it doesn't exist
+      (unless elisp-tred--current-node-overlay
+        (setq elisp-tred--current-node-overlay (make-overlay start highlight-end))
+        (overlay-put elisp-tred--current-node-overlay 'face 'highlight)
+        (overlay-put elisp-tred--current-node-overlay 'priority 100))
+      ;; Move overlay to current node widget
+      (move-overlay elisp-tred--current-node-overlay start highlight-end)))
+  ;; Remove overlay if no node widget on current line
+  (when (and elisp-tred--current-node-overlay
+             (not (elisp-tred--node-widget-for-current-line)))
+    (delete-overlay elisp-tred--current-node-overlay)
+    (setq elisp-tred--current-node-overlay nil)))
 
 (defun elisp-tred--treesit-node (widget)
   "Return the treesit node corresponding to WIDGET.
