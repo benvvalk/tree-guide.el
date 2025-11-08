@@ -50,6 +50,16 @@ in a single line, which can be very long indeed.")
   "<backtab>" #'elisp-tred-goto-parent-and-collapse ;; Shift+Tab
   )
 
+(defun elisp-tred--is-c-source-xref-p (xref)
+  "Return t if XREF item points to a C source definition.
+The elisp xref backend marks C source definitions with file paths
+starting with \"src/\" (e.g., \"src/data.c\")."
+  (when-let* ((location (xref-item-location xref)))
+    ;; Check if this is an elisp-specific location (has a file field)
+    (and (xref-elisp-location-p location)
+         (when-let* ((file (xref-elisp-location-file location)))
+           (string-prefix-p "src/" file)))))
+
 (defun elisp-tred--xref-show-definitions (fetcher alist)
   "Show xref definitions by opening them in elisp-tred buffers.
 
@@ -68,14 +78,19 @@ ALIST is an association list of additional parameters."
 
      ;; Single definition - open it in elisp-tred
      ((= xref-count 1)
-      (let* ((xref (car xrefs))
-             (location (xref-item-location xref))
-             (marker (xref-location-marker location))
-             (buffer (marker-buffer marker))
-             (pos (marker-position marker)))
-        (with-current-buffer buffer
-          (goto-char pos)
-          (elisp-tred-jump-to-tree))))
+      (let ((xref (car xrefs)))
+        (if (elisp-tred--is-c-source-xref-p xref)
+            ;; C source - use default xref behavior
+            (xref-pop-to-location xref)
+          ;; Elisp source - open in elisp-tred
+          (xref-push-marker-stack)
+          (let* ((location (xref-item-location xref))
+                 (marker (xref-location-marker location))
+                 (buffer (marker-buffer marker))
+                 (pos (marker-position marker)))
+            (with-current-buffer buffer
+              (goto-char pos)
+              (elisp-tred-jump-to-tree))))))
 
      ;; Multiple definitions - let user choose, then open in elisp-tred
      (t
@@ -84,14 +99,19 @@ ALIST is an association list of additional parameters."
                            (cons (xref-item-summary xref) xref))
                          xrefs))
              (choice (completing-read "Choose definition: " collection nil t))
-             (xref (cdr (assoc choice collection)))
-             (location (xref-item-location xref))
-             (marker (xref-location-marker location))
-             (buffer (marker-buffer marker))
-             (pos (marker-position marker)))
-        (with-current-buffer buffer
-          (goto-char pos)
-          (elisp-tred-jump-to-tree)))))))
+             (xref (cdr (assoc choice collection))))
+        (if (elisp-tred--is-c-source-xref-p xref)
+            ;; C source - use default xref behavior
+            (xref-pop-to-location xref)
+          ;; Elisp source - open in elisp-tred
+          (xref-push-marker-stack)
+          (let* ((location (xref-item-location xref))
+                 (marker (xref-location-marker location))
+                 (buffer (marker-buffer marker))
+                 (pos (marker-position marker)))
+            (with-current-buffer buffer
+              (goto-char pos)
+              (elisp-tred-jump-to-tree)))))))))
 
 (define-derived-mode elisp-tred-mode special-mode
   "TM"
@@ -200,14 +220,27 @@ POINT."
   ;; effect until I restarted emacs.
   (treesit-parser-create 'elisptred (current-buffer) t))
 
+(defun elisp-tred--buffer-name (treesit-node)
+  "Return a buffer name for an elisp-tred buffer that is rooted at
+TREESIT-NODE."
+  (if-let* (((equal (treesit-node-type treesit-node) "list"))
+            (child0 (treesit-node-child treesit-node 0 t))
+            (child0-text (treesit-node-text child0))
+            ((member child0-text '("defun" "defmacro")))
+            (child1 (treesit-node-child treesit-node 1 t))
+            (function-name (treesit-node-text child1)))
+      (format "*elisp-tred: %s*" function-name)  
+	(format "*elisp-tred*")))
+
 (defun elisp-tred-jump-to-tree ()
   "Open elisp-tred buffer and show tree for current top-level elisp
 form surrounding POINT."
   (interactive)
   (elisp-tred--treesit-init)
-  (when-let* ((tree-buffer (get-buffer-create "*elisp-tred*"))
-              (pos (point))
-              (root-node (elisp-tred--get-toplevel-form-at-point)))
+  (when-let* ((root-node (elisp-tred--get-toplevel-form-at-point))
+              (bufname (elisp-tred--buffer-name root-node))
+              (tree-buffer (get-buffer-create bufname))
+              (pos (point)))
     (with-current-buffer tree-buffer
       (elisp-tred-mode)
       (let ((inhibit-read-only t)
