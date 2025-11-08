@@ -60,6 +60,25 @@ starting with \"src/\" (e.g., \"src/data.c\")."
          (when-let* ((file (xref-elisp-location-file location)))
            (string-prefix-p "src/" file)))))
 
+(defun elisp-tred--xref-show-definition (xref)
+  "Show a single xref definition by opening it in an elisp-tred buffer.
+
+XREF is an xref item to display. For C source definitions, uses the
+default xref behavior. For elisp sources, opens the definition in an
+elisp-tred buffer."
+  (if (elisp-tred--is-c-source-xref-p xref)
+      ;; C source - use default xref behavior
+      (xref-pop-to-location xref)
+    ;; Elisp source - open in elisp-tred
+    (xref-push-marker-stack)
+    (let* ((location (xref-item-location xref))
+           (marker (xref-location-marker location))
+           (buffer (marker-buffer marker))
+           (pos (marker-position marker)))
+      (with-current-buffer buffer
+        (goto-char pos)
+        (elisp-tred-jump-to-tree)))))
+
 (defun elisp-tred--xref-show-definitions (fetcher alist)
   "Show xref definitions by opening them in elisp-tred buffers.
 
@@ -78,19 +97,7 @@ ALIST is an association list of additional parameters."
 
      ;; Single definition - open it in elisp-tred
      ((= xref-count 1)
-      (let ((xref (car xrefs)))
-        (if (elisp-tred--is-c-source-xref-p xref)
-            ;; C source - use default xref behavior
-            (xref-pop-to-location xref)
-          ;; Elisp source - open in elisp-tred
-          (xref-push-marker-stack)
-          (let* ((location (xref-item-location xref))
-                 (marker (xref-location-marker location))
-                 (buffer (marker-buffer marker))
-                 (pos (marker-position marker)))
-            (with-current-buffer buffer
-              (goto-char pos)
-              (elisp-tred-jump-to-tree))))))
+      (elisp-tred--xref-show-definition (car xrefs)))
 
      ;; Multiple definitions - let user choose, then open in elisp-tred
      (t
@@ -100,18 +107,7 @@ ALIST is an association list of additional parameters."
                          xrefs))
              (choice (completing-read "Choose definition: " collection nil t))
              (xref (cdr (assoc choice collection))))
-        (if (elisp-tred--is-c-source-xref-p xref)
-            ;; C source - use default xref behavior
-            (xref-pop-to-location xref)
-          ;; Elisp source - open in elisp-tred
-          (xref-push-marker-stack)
-          (let* ((location (xref-item-location xref))
-                 (marker (xref-location-marker location))
-                 (buffer (marker-buffer marker))
-                 (pos (marker-position marker)))
-            (with-current-buffer buffer
-              (goto-char pos)
-              (elisp-tred-jump-to-tree)))))))))
+        (elisp-tred--xref-show-definition xref))))))
 
 (define-derived-mode elisp-tred-mode special-mode
   "TM"
