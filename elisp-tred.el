@@ -24,6 +24,7 @@
 (require 'seq)
 (require 'treesit)
 (require 'tree-widget)
+(require 'xref)
 
 (defvar-local elisp-tred-max-label-length 128
   "The maximum length of a tree node label. For the sake of
@@ -49,6 +50,49 @@ in a single line, which can be very long indeed.")
   "<backtab>" #'elisp-tred-goto-parent-and-collapse ;; Shift+Tab
   )
 
+(defun elisp-tred--xref-show-definitions (fetcher alist)
+  "Show xref definitions by opening them in elisp-tred buffers.
+
+This is a custom implementation of `xref-show-definitions-function'
+that opens the target definition in an elisp-tred buffer instead of
+jumping directly to the source file.
+
+FETCHER is a function that returns a list of xref items.
+ALIST is an association list of additional parameters."
+  (let* ((xrefs (funcall fetcher))
+         (xref-count (length xrefs)))
+    (cond
+     ;; No definitions found
+     ((= xref-count 0)
+      (user-error "No definitions found"))
+
+     ;; Single definition - open it in elisp-tred
+     ((= xref-count 1)
+      (let* ((xref (car xrefs))
+             (location (xref-item-location xref))
+             (marker (xref-location-marker location))
+             (buffer (marker-buffer marker))
+             (pos (marker-position marker)))
+        (with-current-buffer buffer
+          (goto-char pos)
+          (elisp-tred-jump-to-tree))))
+
+     ;; Multiple definitions - let user choose, then open in elisp-tred
+     (t
+      (let* ((collection (mapcar
+                         (lambda (xref)
+                           (cons (xref-item-summary xref) xref))
+                         xrefs))
+             (choice (completing-read "Choose definition: " collection nil t))
+             (xref (cdr (assoc choice collection)))
+             (location (xref-item-location xref))
+             (marker (xref-location-marker location))
+             (buffer (marker-buffer marker))
+             (pos (marker-position marker)))
+        (with-current-buffer buffer
+          (goto-char pos)
+          (elisp-tred-jump-to-tree)))))))
+
 (define-derived-mode elisp-tred-mode special-mode
   "TM"
   "Mode for displaying lisp code as a tree."
@@ -59,6 +103,9 @@ in a single line, which can be very long indeed.")
    ;; weird to introduce a space before the list/vector
    ;; contents.
    tree-widget-space-width 0)
+  (add-hook 'xref-backend-functions #'elisp--xref-backend nil t)
+  ;; Customize xref to open definitions in elisp-tred buffers
+  (setq-local xref-show-definitions-function #'elisp-tred--xref-show-definitions)
   ;; Add hook to highlight node label on current line
   ;; (automatically updates when cursor moves)
   (add-hook 'post-command-hook #'elisp-tred--update-current-node-highlight nil t))
