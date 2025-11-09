@@ -760,10 +760,6 @@ returning widgets for all name treesit children of NODE.")
                   (match-p (funcall match-fn node)))
         (throw 'break rule)))))
 
-(defun elisp-tred--get-tree-mapping-rule-at-pos (pos)
-  (when-let* ((node (elisp-tred--treesit-node-at pos)))
-    (elisp-tred--get-tree-mapping-rule node)))
-
 (defun elisp-tred--get-expanded-label (node)
   "Return the text label for a treesit node (NODE) when
 it is expanded."
