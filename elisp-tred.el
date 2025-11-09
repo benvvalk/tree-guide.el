@@ -663,6 +663,8 @@ If NODE is not a treesit node for a quoted form, return `nil'."
            (and (not (elisp-tred--sequence-p child0))
                 (not (equal child0-type "comment"))))))
 
+     :collapsed-label-fn elisp-tred--get-collapsed-label-for-sequence
+
      :expanded-label-fn
      (lambda (node)
        (let* ((quote-char (elisp-tred--quote-char node)))
@@ -679,18 +681,18 @@ If NODE is not a treesit node for a quoted form, return `nil'."
         (elisp-tred--sequence-cdr node))))
 
     (:description "a sequence (list or vector) or quoted sequence"
+
      :match-fn
      (lambda (node)
        (elisp-tred--sequence-p node))
+
+     :collapsed-label-fn elisp-tred--get-collapsed-label-for-sequence
+
      :expanded-label-fn
      (lambda (node)
        (let* ((quote-char (elisp-tred--quote-char node)))
          (when-let* ((left-bracket (elisp-tred--left-bracket-char node)))
-           (concat quote-char left-bracket)))))
-
-
-    )
-
+           (concat quote-char left-bracket))))))
   "A list of rules for mapping the structure of the tree-sitter parse
 tree to the structure of the elisp-tred tree. Generally speaking,
 directly mapping the tree-sitter parse tree to the elisp-tred tree is
@@ -724,6 +726,16 @@ the `:match-fn' determines that the treesit node is a match
 a non-nil value. `:match-fn' is the only required property
 for a tree-mapping rule.
 
+`:collapsed-label-fn' (optional) - A function that is used to generate
+the label text for the elisp-tred tree node when it is in collapsed
+state. For example, a elisp-tred node might show a \"(\" when it is
+expanded, and the full list contents when it is collapsed. The
+`:collapsed-label-fn' takes a single argument NODE, which is a treesit
+node that matched this tree mapping rule (as determined by
+`:match-fn'). The `:collapsed-label-fn' is optional and will default to
+just returning the entire source code text corresponding to NODE, with
+newlines and duplicate spaces removed.
+
 `:expanded-label-fn' (optional) - A function that is used to generate
 the label text for the elisp-tred tree node when it is in expanded
 state. For example, a elisp-tred node might show a \"(\" when it is
@@ -731,11 +743,8 @@ expanded, and the full list contents when it is collapsed. The
 `:expanded-label-fn' takes a single argument NODE, which is a treesit
 node that matched this tree mapping rule (as determined by
 `:match-fn'). The `:expanded-label-fn' is optional and will default to
-just returning the entire source code text corresponding to NODE.
-Side note: There is no `:collapsed-label-fn' that corresponds to
-`:expanded-label-fn' because the labels for collapsed elisp-tred nodes
-are always follow the same rule -- they show the entire elisp code for
-the subtree, collapsed to a single line.
+just returning the entire source code text corresponding to NODE, with
+newlines and duplicate spaces removed.
 
 `:child-nodes-fn' (optional) - A function that returns the treesit nodes
 for the the child widgets of the current node in the elisp-tred tree.
@@ -823,18 +832,17 @@ elisp-tred buffer."
         ""))
      right-bracket)))
 
-(defun elisp-tred--get-collapsed-label (node)
+(defun elisp-tred--get-collapsed-label (treesit-node)
   "Return the text label for a treesit node (NODE) when
 it is collapsed."
-  (let* ((label (if (elisp-tred--sequence-p node)
-                    (elisp-tred--get-collapsed-label-for-sequence node)
-                  (elisp-tred--remove-newlines-and-collapse-spaces
-                   (treesit-node-text node))))
-         (num-closing-parens (elisp-tred--calc-number-of-closing-parens node)))
-    (concat label
-            (make-string num-closing-parens ?\))
-            ;; (format " [%s]" (treesit-node-type node))
-            )))
+  (let* ((num-closing-parens (elisp-tred--calc-number-of-closing-parens treesit-node)))
+	(concat
+     (if-let* ((rule (elisp-tred--get-tree-mapping-rule treesit-node))
+               (collapsed-label-fn (plist-get rule :collapsed-label-fn)))
+		 (funcall collapsed-label-fn treesit-node)
+       (elisp-tred--remove-newlines-and-collapse-spaces
+        (treesit-node-text treesit-node)))
+     (make-string num-closing-parens ?\)))))
 
 (defun elisp-tred--leaf-p (node)
   "Return t if treesit NODE should be rendered as a leaf in the
