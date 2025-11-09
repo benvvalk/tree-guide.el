@@ -376,6 +376,28 @@ visible), return a list its child node widgets. Otherwise return
                         widget))
                     child-widgets)))))))
 
+(defun elisp-tred--child-node-widgets (node-widget)
+  "Return the node widget definitions for the children of NODE-WIDGET.
+
+Note that the current expanded/collapsed state of NODE-WIDGET has no
+effect of the widgets returned by this function. If you need a
+function that returns `nil' when NODE-WIDGET is collapsed, use
+`elisp-tred--visible-child-node-widgets' instead."
+  (unless (widget-get node-widget :leaf-p)
+    (let* ((child-widgets (elisp-tred--get-child-widgets node-widget)))
+      ;; If the child widget is a leaf node, `child-widget' is an
+      ;; `item' widget and we can return it as is.
+      ;;
+      ;; If the child widget is an internal (non-leaf) node, then it
+      ;; is a container `tree-widget', and we need to get the node
+      ;; widget (i.e. the label widget for the tree node) from the
+      ;; `:node' property.
+      (mapcar (lambda (child-widget)
+                (if (widget-get child-widget :leaf-p)
+                    child-widget
+                  (widget-get child-widget :node)))
+              child-widgets))))
+
 (defun elisp-tred--sibling-node-widgets (node-widget)
   "Return the list of NODE-WIDGET's siblings, including itself."
   (when-let ((parent-node-widget (elisp-tred--parent-node-widget node-widget)))
@@ -651,9 +673,10 @@ If NODE is not a treesit node for a quoted form, return `nil'."
                    left-bracket
                    child0-text))))
 
-     :child-nodes-fn
+     :child-widgets-fn
      (lambda (node)
-       (elisp-tred--sequence-cdr node)))
+       (mapcar #'elisp-tred--get-tree-widget
+        (elisp-tred--sequence-cdr node))))
 
     (:description "a sequence (list or vector) or quoted sequence"
      :match-fn
@@ -861,25 +884,20 @@ help with structural navigation commands (e.g. `elisp-tred-goto-parent').
     ;; last child is the literal closing paren `)'.
     (eql child-index (- num-children 2))))
 
-(defun elisp-tred--get-child-nodes (node)
-  "Return the child nodes of NODE.
-
-This function is similar to Emacs' built-in `treesit-node-children',
-except that it implements the custom rules for selecting child nodes
-from `elisp-tred--tree-mapping-rules'."
-  (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
-            (child-nodes-fn (plist-get rule :child-nodes-fn)))
-      (funcall child-nodes-fn node)
-    (treesit-node-children node t)))
-
 (defun elisp-tred--get-child-widgets (widget)
   "Get the widget definitions for the children of the given tree node
 WIDGET.
 
 This function is called when expanding a tree node in the UI."
-  (let* ((node (elisp-tred--treesit-node widget))
-         (child-nodes (elisp-tred--get-child-nodes node)))
-    (mapcar 'elisp-tred--get-tree-widget child-nodes)))
+  (let* ((node (elisp-tred--treesit-node widget)))
+    (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
+              (child-widgets-fn (plist-get rule :child-widgets-fn)))
+        ;; There is custom rule for creating/filtering child widgets.
+        (funcall child-widgets-fn node)
+      ;; Default behaviour: Since there is no custom rule, create a
+      ;; widget for each (named) child in the tree-sitter parse tree.
+      (let ((child-nodes (treesit-node-children node t)))
+        (mapcar #'elisp-tred--get-tree-widget child-nodes)))))
 
 (defun elisp-tred--node-contains-pos (node pos)
   "Return t if treesit NODE contains buffer position POS."
@@ -903,14 +921,16 @@ within the tree node label that corresponds to POS."
   ;; Find the line of deepest (leaf-most) tree node containing POS.
   (catch 'done
     (while (not (eobp))
-      (when-let* ((node (elisp-tred--treesit-node-for-current-line)))
-        (when (elisp-tred--node-contains-pos node pos)
+      (when-let* ((node-widget (elisp-tred--node-widget-for-current-line))
+                  (treesit-node (widget-get node-widget :treesit-node)))
+        (when (elisp-tred--node-contains-pos treesit-node pos)
           ;; Check if any child node also contains POS
-          (let ((child-nodes (elisp-tred--get-child-nodes node))
+          (let ((child-node-widgets (elisp-tred--child-node-widgets node-widget))
                 (found-child nil))
-            (dolist (child child-nodes)
-              (when (elisp-tred--node-contains-pos child pos)
-                (setq found-child t)))
+            (dolist (child-node-widget child-node-widgets)
+              (when-let ((child-treesit-node (widget-get child-node-widget :treesit-node)))
+                (when (elisp-tred--node-contains-pos child-treesit-node pos)
+                 (setq found-child t))))
 
             (if found-child
                 ;; One of the children is a better match, so expand
@@ -919,8 +939,7 @@ within the tree node label that corresponds to POS."
                 (elisp-tred--set-tree-widget-expanded
                  (elisp-tred--tree-widget-for-current-line) t)
               ;; Found the target node, move point to exact position in label
-              (let* ((node-widget (elisp-tred--node-widget-for-current-line))
-                     (node-start (treesit-node-start node))
+              (let* ((node-start (treesit-node-start treesit-node))
                      (label-start (widget-get node-widget :from))
                      (label-end (widget-get node-widget :to))
                      ;; Calculate offset of POS within the source node
