@@ -249,15 +249,6 @@ form surrounding POINT."
     ;; `display-buffer-alist'.
     (display-buffer tree-buffer '(display-buffer-same-window))))
 
-(defun elisp-tred--get-icon-widget-for-current-line ()
-  (save-excursion
-    (beginning-of-line)
-    (let ((line-number (line-number-at-pos (point))))
-      (unless (widget-at (point)) (widget-forward 1))
-      (when (and (widget-at (point))
-                 (equal line-number (line-number-at-pos (point))))
-		(widget-at (point))))))
-
 (defun elisp-tred--node-widget-for-current-line ()
   (save-excursion
     (beginning-of-line)
