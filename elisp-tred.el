@@ -881,47 +881,6 @@ from `elisp-tred--tree-mapping-rules'."
       (funcall child-nodes-fn node)
     (treesit-node-children node t)))
 
-(defun elisp-tred--get-sibling-nodes (node)
-  "Return the siblings of treesit node NODE.
-
-This function is similar to doing `(treesit-node-children
-(treesit-node-parent node))', except that it follows the parent/child
-relationships of the elisp-tred tree, rather than the tree-sitter
-tree.  (The mapping between the elisp-tred tree and the tree-sitter
-tree is dictated by `elisp-tred--tree-mapping-rules'.)"
-  (when-let* ((parent-node (treesit-node-parent node)))
-    (elisp-tred--get-child-nodes parent-node)))
-
-(defun elisp-tred--get-next-sibling-node (node)
-  "Return the next sibling of treesit node NODE.
-
-This function is similar to Emacs' built-in
-`treesit-node-next-sibling', except that it follows the parent/child
-relationships of the elisp-tred tree, rather than the tree-sitter
-tree. (The mapping between the elisp-tred tree and the tree-sitter
-tree is dictated by `elisp-tred--tree-mapping-rules'.)"
-  (when-let* ((siblings (elisp-tred--get-sibling-nodes node))
-              (sibling-index (seq-position siblings node))
-              (next-sibling-index (1+ sibling-index)))
-    ;; Note: `nth' returns nil if index is greater than list length.
-    (nth next-sibling-index siblings)))
-
-(defun elisp-tred--get-prev-sibling-node (node)
-  "Return the previous sibling of treesit node NODE.
-
-This function is similar to Emacs' built-in
-`treesit-node-prev-sibling', except that it follows the parent/child
-relationships of the elisp-tred tree, rather than the tree-sitter
-tree. (The mapping between the elisp-tred tree and the tree-sitter
-tree is dictated by `elisp-tred--tree-mapping-rules'.)"
-  (when-let* ((siblings (elisp-tred--get-sibling-nodes node))
-              (sibling-index (seq-position siblings node))
-              (next-sibling-index (1- sibling-index)))
-    ;; Note: When index is negative, `nth' returns the first element
-    ;; of the list, which is not what we want.
-    (when (>= next-sibling-index 0)
-      (nth next-sibling-index siblings))))
-
 (defun elisp-tred--get-child-widgets (widget)
   "Get the widget definitions for the children of the given tree node
 WIDGET.
