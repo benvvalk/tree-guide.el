@@ -746,12 +746,12 @@ node that matched this tree mapping rule (as determined by
 just returning the entire source code text corresponding to NODE, with
 newlines and duplicate spaces removed.
 
-`:child-nodes-fn' (optional) - A function that returns the treesit nodes
-for the the child widgets of the current node in the elisp-tred tree.
-The `:expanded-label-fn' takes a single argument NODE, which is a treesit
+`:child-widgets-fn' (optional) - A function that returns the child
+widgets of the current node in the elisp-tred tree. The
+`:child-widgets-fn' takes a single argument NODE, which is a treesit
 node that matched this tree mapping rule (as determined by
-`:match-fn'). The `:child-nodes-fn' is optional and defaults to returning
-all named children of NODE.")
+`:match-fn'). The `:child-nodes-fn' is optional and defaults to
+returning widgets for all name treesit children of NODE.")
 
 (defun elisp-tred--get-tree-mapping-rule (node)
   (catch 'break
