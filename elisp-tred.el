@@ -628,6 +628,68 @@ If NODE is not a treesit node for a quoted form, return `nil'."
   (when (elisp-tred--quoted-p node)
     (treesit-node-text (treesit-node-child node 0))))
 
+(defvar elisp-tred--newline-regex
+  "\\(\r\n\\|\n\\|\r\\)"
+  "Regular expression that matches newlines on Linux, Mac, and Windows.")
+
+(defun elisp-tred--multiline-string-p (treesit-node)
+  "Return true if TREESIT-NODE is a string that contains
+one or more newlines."
+  (when (equal (treesit-node-type treesit-node) "string")
+    (let* ((str (treesit-node-text treesit-node))
+           (lines (split-string str elisp-tred--newline-regex)))
+		(> (length lines) 1))))
+
+(defun elisp-tred--linewise-widgets-for-string (treesit-node)
+  "For a TREESIT-NODE of type \"string\", return one `item' widget per
+line of text in the string. In other words, split on newlines and
+create a widget for each part."
+  (let ((str (treesit-node-text treesit-node))
+        (treesit-start-pos (treesit-node-start treesit-node))
+        (str-pos 0)
+        child-widgets)
+    (while (string-match elisp-tred--newline-regex str str-pos)
+      (let ((start (match-beginning 0))
+            (end (match-end 0)))
+        (push (elisp-tred--get-tree-widget
+               treesit-node
+               (+ treesit-start-pos str-pos)
+               (+ treesit-start-pos start))
+              child-widgets)
+        (setq str-pos end)))
+    ;; Handle the last line, in the case that it doesn't
+    ;; have a trailing newline.
+    (when (< str-pos (length str))
+      (push (elisp-tred--get-tree-widget
+             treesit-node
+             (+ treesit-start-pos str-pos)
+             (+ treesit-start-pos (length str)))
+            child-widgets))
+    (nreverse child-widgets)))
+
+(defun elisp-tred--child-widgets-for-sequence (treesit-node)
+  "Return the child widgets of TREESIT-NODE, where TREESIT-NODE
+represents a lisp sequence (i.e. a list or a vector).
+
+In general, this function just gets the named children of TREESIT-NODE
+and creates a widget for each. However, in the case of multi-line
+strings (e.g. the docstring for a `defun'), we split the string into a
+separate tree node widgets for each line. This helps greatly with
+readability of docstrings, as otherwise they would collapsed to a
+single line and truncated to a maximum length."
+  (let ((child-nodes (treesit-node-children treesit-node t))
+        child-widgets)
+    (dolist (child-node child-nodes)
+      ;; Split multi-line strings into one widget per line. Without
+      ;; this, docstrings are collapsed to a single line and truncated
+      ;; to `elisp-tred-max-label-length', which prevents the user
+      ;; from reading documentation.
+      (if (elisp-tred--multiline-string-p child-node)
+          (dolist (widget (elisp-tred--linewise-widgets-for-string child-node))
+                  (push widget child-widgets))
+        (push (elisp-tred--get-tree-widget child-node) child-widgets)))
+    (nreverse child-widgets)))
+
 (defvar elisp-tred--tree-mapping-rules
   `(
     ;; If a sequence (list or vector) has two or more elements, and
@@ -655,7 +717,7 @@ If NODE is not a treesit node for a quoted form, return `nil'."
  and the first element is not a sequence or a comment"
 
      :match-fn
-     (lambda (node)
+     (lambda (node &optional from to)
 	   (when (and (elisp-tred--sequence-p node)
                   (>= (elisp-tred--sequence-length node) 2))
          (let* ((child0 (elisp-tred--sequence-car node))
@@ -676,14 +738,16 @@ If NODE is not a treesit node for a quoted form, return `nil'."
                    child0-text))))
 
      :child-widgets-fn
-     (lambda (node)
-       (mapcar #'elisp-tred--get-tree-widget
-        (elisp-tred--sequence-cdr node))))
+     (lambda (treesit-node)
+       ;; Remove widget for first element (e.g. `setq', `defun'),
+       ;; because it is already shown on the parent line along with the
+       ;; opening paren/bracket.
+       (cdr (elisp-tred--child-widgets-for-sequence treesit-node))))
 
     (:description "a sequence (list or vector) or quoted sequence"
 
      :match-fn
-     (lambda (node)
+     (lambda (node &optional from to)
        (elisp-tred--sequence-p node))
 
      :collapsed-label-fn elisp-tred--get-collapsed-label-for-sequence
@@ -692,7 +756,9 @@ If NODE is not a treesit node for a quoted form, return `nil'."
      (lambda (node)
        (let* ((quote-char (elisp-tred--quote-char node)))
          (when-let* ((left-bracket (elisp-tred--left-bracket-char node)))
-           (concat quote-char left-bracket))))))
+           (concat quote-char left-bracket))))
+
+     :child-widgets-fn elisp-tred--child-widgets-for-sequence))
   "A list of rules for mapping the structure of the tree-sitter parse
 tree to the structure of the elisp-tred tree. Generally speaking,
 directly mapping the tree-sitter parse tree to the elisp-tred tree is
@@ -753,11 +819,11 @@ node that matched this tree mapping rule (as determined by
 `:match-fn'). The `:child-nodes-fn' is optional and defaults to
 returning widgets for all name treesit children of NODE.")
 
-(defun elisp-tred--get-tree-mapping-rule (node)
+(defun elisp-tred--get-tree-mapping-rule (node &optional from to)
   (catch 'break
     (dolist (rule elisp-tred--tree-mapping-rules)
 	  (when-let* ((match-fn (plist-get rule :match-fn))
-                  (match-p (funcall match-fn node)))
+                  (match-p (funcall match-fn node from to)))
         (throw 'break rule)))))
 
 (defun elisp-tred--get-expanded-label (node)
@@ -783,7 +849,7 @@ tree). If NODE is not the last child of its parent, we always return
         1)
       0))
 
-(defun elisp-tred--get-collapsed-label-for-sequence (node)
+(defun elisp-tred--get-collapsed-label-for-sequence (node &optional from to)
   "Given a treesit node NODE for a sequence (list or vector), return
 the label for the node in its collapsed state, i.e. when its children
 are hidden in the elisp-tred tree.
@@ -800,7 +866,8 @@ elisp-tred buffer."
          (left-bracket (elisp-tred--left-bracket-char node))
          (right-bracket (elisp-tred--right-bracket-char node))
          (children (elisp-tred--sequence-children node))
-         (max-len elisp-tred-max-label-length))
+         (max-len elisp-tred-max-label-length)
+         (num-closing-parens (elisp-tred--calc-number-of-closing-parens node)))
     (concat
      quote-char
      left-bracket
@@ -822,27 +889,34 @@ elisp-tred buffer."
                 new-acc))))
         children
         ""))
-     right-bracket)))
-
-(defun elisp-tred--get-collapsed-label (treesit-node)
-  "Return the text label for a treesit node (NODE) when
-it is collapsed."
-  (let* ((num-closing-parens (elisp-tred--calc-number-of-closing-parens treesit-node)))
-	(concat
-     (if-let* ((rule (elisp-tred--get-tree-mapping-rule treesit-node))
-               (collapsed-label-fn (plist-get rule :collapsed-label-fn)))
-		 (funcall collapsed-label-fn treesit-node)
-       (elisp-tred--remove-newlines-and-collapse-spaces
-        (treesit-node-text treesit-node)))
+     right-bracket
      (make-string num-closing-parens ?\)))))
 
-(defun elisp-tred--leaf-p (node)
+(defun elisp-tred--get-collapsed-label (treesit-node &optional from to)
+  "Return the text label for a treesit node (NODE) when
+it is collapsed."
+  (if-let* ((rule (elisp-tred--get-tree-mapping-rule treesit-node))
+            (collapsed-label-fn (plist-get rule :collapsed-label-fn)))
+	  (funcall collapsed-label-fn treesit-node from to)
+    (let ((num-closing-parens (elisp-tred--calc-number-of-closing-parens treesit-node))
+          (text (treesit-node-text treesit-node))
+          (start-pos (treesit-node-start treesit-node)))
+      (concat
+       (if (and from to)
+           (substring text (- from start-pos) (- to start-pos))
+         (concat (elisp-tred--remove-newlines-and-collapse-spaces text)
+                 (make-string num-closing-parens ?\))))))))
+
+(defun elisp-tred--leaf-p (node &optional from to)
   "Return t if treesit NODE should be rendered as a leaf in the
 elisp-tred tree."
-  (let ((unquoted (elisp-tred--unquote node)))
-    (eq (treesit-node-child-count unquoted) 0)))
+  (if-let* ((rule (elisp-tred--get-tree-mapping-rule node from to))
+            (child-widgets-fn (plist-get rule :child-widgets-fn)))
+      (null (funcall child-widgets-fn node))
+    (let ((unquoted (elisp-tred--unquote node)))
+      (eq (treesit-node-child-count unquoted) 0))))
 
-(defun elisp-tred--get-tree-widget (node)
+(defun elisp-tred--get-tree-widget (node &optional from to)
   "Return the widget definition for treesit node NODE.
 
 The widget definition is used render the treesit node as
@@ -852,17 +926,21 @@ PARENT-TREE-WIDGET is the tree widget for the parent in the
 elisp-tred tree. We store a reference to parent widget to
 help with structural navigation commands (e.g. `elisp-tred-goto-parent').
 "
-  (if (elisp-tred--leaf-p node)
+  (if (elisp-tred--leaf-p node from to)
 	  `(elisp-tred-node-label
-        :tag ,(elisp-tred--get-collapsed-label node)
+        :tag ,(elisp-tred--get-collapsed-label node from to)
         :treesit-node ,node
+        :treesit-node-from ,from
+        :treesit-node-to ,to
         :leaf-p t)
     (let ((half-width-space (propertize " " 'display '(space :width 0.5)))
           (shadow-face (lambda (text) (propertize text 'face 'shadow))))
       `(tree-widget
        :node (elisp-tred-node-label
-              :tag ,(elisp-tred--get-collapsed-label node)
+              :tag ,(elisp-tred--get-collapsed-label node from to)
               :treesit-node ,node
+              :treesit-node-from ,from
+              :treesit-node-to ,to
               :leaf-p nil)
        :open-icon (elisp-tred-empty-icon)
        :close-icon (elisp-tred-empty-icon)
@@ -889,8 +967,11 @@ help with structural navigation commands (e.g. `elisp-tred-goto-parent').
 WIDGET.
 
 This function is called when expanding a tree node in the UI."
-  (let* ((node (elisp-tred--treesit-node widget)))
-    (if-let* ((rule (elisp-tred--get-tree-mapping-rule node))
+  (let* ((node-widget (widget-get widget :node))
+         (node (elisp-tred--treesit-node widget))
+         (from (widget-get node-widget :treesit-node-from))
+         (to (widget-get node-widget :treesit-node-to)))
+    (if-let* ((rule (elisp-tred--get-tree-mapping-rule node from to))
               (child-widgets-fn (plist-get rule :child-widgets-fn)))
         ;; There is custom rule for creating/filtering child widgets.
         (funcall child-widgets-fn node)
@@ -940,14 +1021,16 @@ within the tree node label that corresponds to POS."
                  (elisp-tred--tree-widget-for-current-line) t)
               ;; Found the target node, move point to exact position in label
               (let* ((node-start (treesit-node-start treesit-node))
+                     (node-from (or (widget-get node-widget :treesit-node-from) node-start))
                      (label-start (widget-get node-widget :from))
                      (label-end (widget-get node-widget :to))
-                     ;; Calculate offset of POS within the source node
-                     (offset-in-node (- pos node-start))
+                     ;; Calculate offset of POS within the source node portion
+                     (offset-in-node (- pos node-from))
                      ;; Calculate the target position in the tree buffer label
                      (target-pos (+ label-start offset-in-node)))
                 ;; Clamp to label boundaries to handle edge cases
-                (goto-char (min (max target-pos label-start) (1- label-end))))
+                ;; Use max of (label-start, label-end - 1) to handle empty/short labels
+                (goto-char (min (max target-pos label-start) (max label-start (1- label-end)))))
               (throw 'done t)))))
       (forward-line 1))))
 
@@ -965,10 +1048,12 @@ to the current cursor position in the elisp-tred buffer."
            (offset-in-label (- cursor-pos label-start))
            ;; Calculate the target position in the source buffer
            (node-start (treesit-node-start node))
+           (node-from (or (widget-get node-widget :treesit-node-from) node-start))
            (node-end (treesit-node-end node))
-           (target-pos (+ node-start offset-in-label)))
+           (node-to (or (widget-get node-widget :treesit-node-to) (1- node-end)))
+           (target-pos (+ node-from offset-in-label)))
       ;; Clamp to node boundaries to handle edge cases
-      (let ((clamped-pos (min (max target-pos node-start) (1- node-end))))
+      (let ((clamped-pos (min (max target-pos node-from) node-to)))
         (with-current-buffer source-buffer
             (goto-char clamped-pos))
         (display-buffer source-buffer '(display-buffer-same-window))))))
