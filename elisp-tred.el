@@ -796,10 +796,6 @@ used to represent the omitted forms. When truncating, we remove entire
 balanced forms, rather than simply chopping the string at the maximum
 character length, to ensure that parentheses remain balanced in the
 elisp-tred buffer."
-  ;; Implementation note: You may be wondering why we have
-  ;; `right-bracket' here but no `left-bracket'. The reason is that we
-  ;; use the left bracket as the icon for the tree node (see
-  ;; `elisp-tred--get-tree-widget').
   (let* ((quote-char (elisp-tred--quote-char node))
          (left-bracket (elisp-tred--left-bracket-char node))
          (right-bracket (elisp-tred--right-bracket-char node))
