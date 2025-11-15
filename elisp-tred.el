@@ -919,13 +919,14 @@ elisp-tred tree."
 (defun elisp-tred--get-tree-widget (node &optional from to)
   "Return the widget definition for treesit node NODE.
 
-The widget definition is used render the treesit node as
-collapsible tree widget in the elisp-tree buffer.
+The widget definition is used render the treesit node as collapsible
+tree widget in the elisp-tree buffer.
 
-PARENT-TREE-WIDGET is the tree widget for the parent in the
-elisp-tred tree. We store a reference to parent widget to
-help with structural navigation commands (e.g. `elisp-tred-goto-parent').
-"
+The FROM and TO arguments specify a subrange of the NODE's full range
+in the elisp source code buffer, as returned by
+`treesit-node-start'/`treesit-node-end'.  One place where subranges
+are used is to create separate widgets for each line in a multi-line
+string (for the sake of readability)."
   (if (elisp-tred--leaf-p node from to)
 	  `(elisp-tred-node-label
         :tag ,(elisp-tred--get-collapsed-label node from to)
