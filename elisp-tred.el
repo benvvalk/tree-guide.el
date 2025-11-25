@@ -81,7 +81,7 @@ elisp-tred buffer."
            (pos (marker-position marker)))
       (with-current-buffer buffer
         (goto-char pos)
-        (elisp-tred-jump-to-tree)))))
+        (elisp-tred)))))
 
 (defun elisp-tred--xref-show-definitions (fetcher alist)
   "Show xref definitions by opening them in elisp-tred buffers.
@@ -293,7 +293,7 @@ TREESIT-NODE."
       (format "*elisp-tred: %s*" function-name)  
 	(format "*elisp-tred*")))
 
-(defun elisp-tred-jump-to-tree ()
+(defun elisp-tred ()
   "Open elisp-tred buffer and show tree for current top-level elisp
 form surrounding POINT."
   (interactive)
