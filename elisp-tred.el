@@ -960,6 +960,20 @@ elisp-tred buffer."
 (defun elisp-tred--get-collapsed-label (treesit-node &optional from to)
   "Return the text label for a treesit node (NODE) when
 it is collapsed."
+  ;; Force syntax highlighting for the part of the source code buffer
+  ;; that corresponds to `treesit-node'. By default, Emacs does
+  ;; lazy/just-in-time syntax highlighting of elisp code, where a
+  ;; piece of code is not syntax-highlighted until it becomes visible
+  ;; (i.e. the user scrolls to it in a window). As a result, when we
+  ;; do `M-.' (`xref-find-definition') on a symbol, the elisp-tred
+  ;; renders the tree for the target macro/defun without syntax
+  ;; highlighting, unless we call `jit-lock-fontify-now' first.
+  (let ((source-buffer (treesit-node-buffer treesit-node))
+        (start (or from (treesit-node-start treesit-node)))
+        (end (or to (treesit-node-end treesit-node))))
+    (with-current-buffer source-buffer
+      (when jit-lock-mode
+       (jit-lock-fontify-now start end))))
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule treesit-node))
             (collapsed-label-fn (plist-get rule :collapsed-label-fn)))
 	  (funcall collapsed-label-fn treesit-node from to)
