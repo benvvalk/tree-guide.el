@@ -302,6 +302,21 @@ form surrounding POINT."
               (bufname (elisp-tred--buffer-name root-node))
               (tree-buffer (get-buffer-create bufname))
               (pos (point)))
+    ;; Force immediate syntax highlighting of the entire elisp source
+    ;; code buffer, using Emacs' built-in syntax highlighting.  This
+    ;; ensures that the code used to label the tree nodes is always
+    ;; syntax-highlighted. By default, Emacs does "just-in-time"
+    ;; syntax highlighting of elisp code, which means that code only
+    ;; gets syntax-highlighted when it becomes visible to the user
+    ;; (i.e. when the user scrolls to the code in a window). If we
+    ;; don't force ahead-of-time syntax highlighting, the lack of
+    ;; syntax highlighting becomes particularly noticeable if we are
+    ;; using `M-.'  (`xref-find-definition') to jump between function
+    ;; definitions across buffers.
+    (when jit-lock-mode
+      (message "elisp-tred: syntax highlighting...")
+      (let ((result (benchmark-run (jit-lock-fontify-now (point-min) (point-max)))))
+        (message "elisp-tred: syntax highlighting...done (%.3f sec)" (car result))))
     (with-current-buffer tree-buffer
       (elisp-tred-mode)
       (let ((inhibit-read-only t)
@@ -960,20 +975,6 @@ elisp-tred buffer."
 (defun elisp-tred--get-collapsed-label (treesit-node &optional from to)
   "Return the text label for a treesit node (NODE) when
 it is collapsed."
-  ;; Force syntax highlighting for the part of the source code buffer
-  ;; that corresponds to `treesit-node'. By default, Emacs does
-  ;; lazy/just-in-time syntax highlighting of elisp code, where a
-  ;; piece of code is not syntax-highlighted until it becomes visible
-  ;; (i.e. the user scrolls to it in a window). As a result, when we
-  ;; do `M-.' (`xref-find-definition') on a symbol, the elisp-tred
-  ;; renders the tree for the target macro/defun without syntax
-  ;; highlighting, unless we call `jit-lock-fontify-now' first.
-  (let ((source-buffer (treesit-node-buffer treesit-node))
-        (start (or from (treesit-node-start treesit-node)))
-        (end (or to (treesit-node-end treesit-node))))
-    (with-current-buffer source-buffer
-      (when jit-lock-mode
-       (jit-lock-fontify-now start end))))
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule treesit-node))
             (collapsed-label-fn (plist-get rule :collapsed-label-fn)))
 	  (funcall collapsed-label-fn treesit-node from to)
