@@ -322,8 +322,12 @@ form surrounding POINT."
       (let ((inhibit-read-only t)
             (tree-widget-image-enable nil))
         (erase-buffer)
-        (widget-create (elisp-tred--get-tree-widget root-node))
-        (elisp-tred--goto-source-code-pos-in-tree pos)))
+        (message "elisp-tred: creating root widget...")
+		(let ((result (benchmark-run (widget-create (elisp-tred--get-tree-widget root-node)))))
+          (message "elisp-tred: creating root widget...done (%.3f sec)" (car result)))
+        (message "elisp-tred: building tree...")
+        (let ((result (benchmark-run (elisp-tred--goto-source-code-pos-in-tree pos))))
+          (message "elisp-tred: building tree...done (%.3f sec)" (car result)))))
     ;; Default to displaying the tree buffer in the same window as the
     ;; elisp source buffer, unless the user overrides it in their
     ;; `display-buffer-alist'.
