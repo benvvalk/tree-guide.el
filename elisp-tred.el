@@ -298,7 +298,7 @@ TREESIT-NODE."
 form surrounding POINT."
   (interactive)
   (elisp-tred--treesit-init)
-  (when-let* ((root-node (elisp-tred--get-toplevel-form-at-point))
+  (when-let* ((root-node (treesit-buffer-root-node 'elisptred))
               (bufname (elisp-tred--buffer-name root-node))
               (tree-buffer (get-buffer-create bufname))
               (pos (point)))
