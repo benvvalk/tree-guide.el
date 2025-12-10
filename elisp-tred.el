@@ -44,6 +44,7 @@ in a single line, which can be very long indeed.")
 
 (defvar-keymap elisp-tred-mode-map
   "TAB" #'elisp-tred-toggle-node
+  "C-<tab>" #'elisp-tred-toggle-node-recursively
   "RET" #'elisp-tred-jump-to-source-buffer
   "n" #'elisp-tred-goto-next-sibling
   "p" #'elisp-tred-goto-prev-sibling
@@ -399,6 +400,24 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
        ;; Redraw the widget
        (widget-apply tree-widget :value-set expanded)))))
 
+(defun elisp-tred--expand-tree-widget-recursively (tree-widget)
+  "Expand TREE-WIDGET and its children recursively."
+  (elisp-tred--set-tree-widget-expanded tree-widget t)
+  (dolist (child-tree-widget (elisp-tred--visible-child-tree-widgets tree-widget))
+    (elisp-tred--expand-tree-widget-recursively child-tree-widget)))
+
+(defun elisp-tred-toggle-node-recursively ()
+  "If the tree widget on the current line is collapsed, expand
+it and its children recursively. It the tree widget is expanded,
+collapse it.
+
+If there is no tree widget on the current line, do nothing."
+  (interactive)
+  (when-let* ((tree-widget (elisp-tred--tree-widget-for-current-line)))
+    (if (widget-get tree-widget :open)
+        (elisp-tred--set-tree-widget-expanded tree-widget nil)
+      (elisp-tred--expand-tree-widget-recursively tree-widget))))
+
 (defun elisp-tred-toggle-node ()
   "Toggle the expanded/collapsed state of the tree node on the current line."
   (interactive)
@@ -425,6 +444,32 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
         (car (widget-get parent1 :children))
       (let ((parent2 (widget-get parent1 :parent)))
         (car (widget-get parent2 :children))))))
+
+(defun elisp-tred--visible-child-tree-widgets (tree-widget)
+  "If the TREE-WIDGET is currently expanded (i.e. its children are
+visible), return a list child tree widgets (i.e. non-leaf
+children). Otherwise return `nil'."
+  (when (widget-get tree-widget :open)
+    ;; Some reminders about the `tree-widget' data structure,
+    ;; to help understand the code below:
+    ;;
+    ;; * One would expect the `:children' property of a
+    ;; `tree-widget' to simply be a list of the (converted)
+    ;; widgets for the children. However, there is an extra
+    ;; widget added to the front of the list. The `car' of
+    ;; `:children' is the (converted) `:node' widget of the
+    ;; parent node, and the `cdr' of `:children' is actual
+    ;; list of (converted) widgets for the children.
+    ;;
+    ;; * There are two cases for the widget types of the
+    ;; children. If the child is an internal node (i.e. not a
+    ;; leaf node) its widget type will be
+    ;; `tree-widget'. However, if the child is a leaf node, it
+    ;; will be a basic widget type (`button', `item', etc.). In
+    ;; the case of `elisp-tred-mode', leaf nodes are always
+    ;; `item' widgets.
+    (let ((child-widgets (cdr (widget-get tree-widget :children))))
+      (seq-filter #'tree-widget-p child-widgets))))
 
 (defun elisp-tred--visible-child-node-widgets (node-widget)
   "If the NODE-WIDGET is currently expanded (i.e. its children are
