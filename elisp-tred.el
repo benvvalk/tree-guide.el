@@ -509,7 +509,7 @@ visible), return a list its child node widgets. Otherwise return
   "Return the node widget definitions for the children of NODE-WIDGET.
 
 Note that the current expanded/collapsed state of NODE-WIDGET has no
-effect of the widgets returned by this function. If you need a
+effect on the widgets returned by this function. If you need a
 function that returns `nil' when NODE-WIDGET is collapsed, use
 `elisp-tred--visible-child-node-widgets' instead."
   (unless (widget-get node-widget :leaf-p)
