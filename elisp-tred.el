@@ -149,6 +149,20 @@ ALIST is an association list of additional parameters."
   ;; (automatically updates when cursor moves)
   (add-hook 'post-command-hook #'elisp-tred--update-current-node-highlight nil t))
 
+;;; Custom "widgets"
+;;
+;; This section defines a few simple custom UI widgets, which are
+;; based Emacs' built-in widgets system [1]. Widgets are used to
+;; implement the interactive UI for `customize', but that's the only
+;; place I've ever seen them used in practice.
+;;
+;; Note: Understanding Emacs' widget system is fairly important for
+;; understanding how `elisp-tred' works, because the elisp-tred tree is
+;; implemented using `tree-widget.el', which is one of built-in widgets
+;; provided by Emacs.
+;;
+;; [1]: "The Emacs Widget Library", https://www.gnu.org/software/emacs/manual/html_mono/widget.html.
+
 (define-widget 'elisp-tred-node-label 'item
   "A custom widget that is used for the tree node labels.
 
