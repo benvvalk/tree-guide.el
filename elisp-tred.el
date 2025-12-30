@@ -963,20 +963,23 @@ it is expanded."
       (funcall label-fn node)
     ""))
 
-(defun elisp-tred--calc-number-of-closing-parens (node)
-  "Calculate the number of closing parens (`)') that we need
-to append to the label for treesit node NODE, in order to balance
-open parens (`(') in parent and ancestor nodes.
+(defun elisp-tred--closing-brackets-string (node)
+  "Build the closing brackets string for the given treesit node NODE,
+which is a sequence of `]' and `)' characters for closing vectors and
+lists, respectively.
 
-Note that it is only necessary to append closing parens if If NODE is
-the last child of it's parent node (and so on recursively up the
-tree). If NODE is not the last child of its parent, we always return
-0."
-  (if (elisp-tred--is-last-child node)
-      (if-let* ((parent (treesit-node-parent node)))
-          (1+ (elisp-tred--calc-number-of-closing-parens parent))
-        1)
-      0))
+For the sake of displaying the elisp code compactly, we display the
+closing brackets for lists/vectors on the same line as the last
+list/vector item.  If NODE is not the last item of a list/vector
+(i.e. the last child or the parent), then this function will return
+`nil'."
+  (when (and node (elisp-tred--is-last-child node))
+      (when-let* ((parent-node (treesit-node-parent node))
+                  (parent-node-type (treesit-node-type parent-node)))
+        (concat (elisp-tred--closing-brackets-string parent-node)
+                (pcase parent-node-type
+		  		  ("list" ")")
+                  ("vector" "]"))))))
 
 (defun elisp-tred--get-collapsed-label-for-sequence (node &optional from to)
   "Given a treesit node NODE for a sequence (list or vector), return
@@ -995,8 +998,7 @@ elisp-tred buffer."
          (left-bracket (elisp-tred--left-bracket-char node))
          (right-bracket (elisp-tred--right-bracket-char node))
          (children (elisp-tred--sequence-children node))
-         (max-len elisp-tred-max-label-length)
-         (num-closing-parens (elisp-tred--calc-number-of-closing-parens node)))
+         (max-len elisp-tred-max-label-length))
     (concat
      quote-char
      left-bracket
@@ -1019,7 +1021,7 @@ elisp-tred buffer."
         children
         ""))
      right-bracket
-     (make-string num-closing-parens ?\)))))
+     (elisp-tred--closing-brackets-string node))))
 
 (defun elisp-tred--get-collapsed-label (treesit-node &optional from to)
   "Return the text label for a treesit node (NODE) when
@@ -1027,14 +1029,13 @@ it is collapsed."
   (if-let* ((rule (elisp-tred--get-tree-mapping-rule treesit-node))
             (collapsed-label-fn (plist-get rule :collapsed-label-fn)))
 	  (funcall collapsed-label-fn treesit-node from to)
-    (let ((num-closing-parens (elisp-tred--calc-number-of-closing-parens treesit-node))
-          (text (treesit-node-text treesit-node))
+    (let ((text (treesit-node-text treesit-node))
           (start-pos (treesit-node-start treesit-node)))
       (concat
        (if (and from to)
            (substring text (- from start-pos) (- to start-pos))
          (concat (elisp-tred--remove-newlines-and-collapse-spaces text)
-                 (make-string num-closing-parens ?\))))))))
+                 (elisp-tred--closing-brackets-string treesit-node)))))))
 
 (defun elisp-tred--leaf-p (node &optional from to)
   "Return t if treesit NODE should be rendered as a leaf in the
