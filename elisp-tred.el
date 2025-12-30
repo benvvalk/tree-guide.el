@@ -55,6 +55,24 @@ in a single line, which can be very long indeed.")
   "<backtab>" #'elisp-tred-goto-parent-and-collapse ;; Shift+Tab
   )
 
+;;; `xref' backend
+;;
+;; The code in this section implements the `xref' backend for
+;; `elisp-tred'. This allows users to call `xref-find-definitions' on
+;; a symbol in the `elisp-tred' tree, to jump to the definition of the
+;; lisp function/variable/macro under the cursor.
+;;
+;; `M-.' (`xref-find-definitions') in `elisp-tred' behaves very
+;; similarly to `M-.' in `emacs-lisp-mode' buffers, except that the
+;; target function/variable/macro is displayed in a new `elisp-tred'
+;; buffer, rather than jumping directly to the elisp source code
+;; file. This allows the user to keep browsing the code as a tree,
+;; when jumping between elisp functions. One notable exception
+;; behaviour is that jumping to the definition of a C function will
+;; jump to the C source code file, because `elisp-tred' only knows how
+;; to create interactive trees for elisp code. (Perhaps someday it
+;; will support C code as well.)
+
 (defun elisp-tred--is-c-source-xref-p (xref)
   "Return t if XREF item points to a C source definition.
 The elisp xref backend marks C source definitions with file paths
