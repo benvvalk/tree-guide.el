@@ -402,9 +402,14 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
 
 (defun elisp-tred--expand-tree-widget-recursively (tree-widget)
   "Expand TREE-WIDGET and its children recursively."
-  (elisp-tred--set-tree-widget-expanded tree-widget t)
-  (dolist (child-tree-widget (elisp-tred--visible-child-tree-widgets tree-widget))
-    (elisp-tred--expand-tree-widget-recursively child-tree-widget)))
+  (let ((treesit-node (elisp-tred--treesit-node tree-widget)))
+    ;; Special case: Don't auto-expand single-item lists/vectors,
+    ;; because it wastes vertical space without improving code
+    ;; readability.
+    (unless (elisp-tred--single-item-sequence-p treesit-node)
+      (elisp-tred--set-tree-widget-expanded tree-widget t)
+      (dolist (child-tree-widget (elisp-tred--visible-child-tree-widgets tree-widget))
+        (elisp-tred--expand-tree-widget-recursively child-tree-widget)))))
 
 (defun elisp-tred-toggle-node-recursively ()
   "If the tree widget on the current line is collapsed, expand
@@ -697,6 +702,12 @@ quoted sequence, return the number of elements in the
 sequence. Otherwise return `nil'."
   (when (elisp-tred--sequence-p node)
     (treesit-node-child-count (elisp-tred--unquote node) t)))
+
+(defun elisp-tred--single-item-sequence-p (node)
+  "Return non-nil if the treesit node NODE represents a list or vector
+with a single element."
+  (and (elisp-tred--sequence-p node)
+       (eq (elisp-tred--sequence-length node) 1)))
 
 (defun elisp-tred--sequence-children (node)
   "If NODE is a treesit node for a sequence (list or vector) or a
