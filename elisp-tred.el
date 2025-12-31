@@ -415,12 +415,36 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
   (when-let* ((label-widget (widget-get tree-widget :node))
               (treesit-node (elisp-tred--treesit-node tree-widget)))
     ;; Do nothing if `expanded' already matches the current
-    ;; expanded/collapsed state of the tree-widget. I noticed that if
-    ;; I re-expand an already-expanded tree widget, it resets all the
-    ;; children to a collapsed state. This probably has something to
-    ;; do with saving child states, but I'm not familiar with how that
-    ;; part of `tree-widget.el' works yet.
+    ;; expanded/collapsed state of the tree-widget.
     (when (not (equal expanded (widget-get tree-widget :open)))
+      ;; Before collapsing the node, call
+      ;; `tree-widget-children-value-save' to recursively save the
+      ;; collapsed/expanded states of the descendants. This ensures
+      ;; that the subtree looks exactly the same the next time we
+      ;; expand it. (Without this step, the children would all be in
+      ;; collapsed state the next time we expand the node).
+      ;;
+      ;; `tree-widget' implementation notes:
+      ;;
+      ;; * When a node is collapsed, the text lines for the descendant
+      ;; nodes are completely *deleted* from the buffer (!), not
+      ;; hidden.
+      ;;
+      ;; * `tree-widget-children-value-save' saves the
+      ;; collapsed/expanded states of the descendants by updating the
+      ;; values of the `:open' property in the widget definitions for
+      ;; the children, which are stored `:args' property of the
+      ;; parent. The next time the parent is expanded, the descendant
+      ;; nodes are redrawn from scratch in the buffer, from the
+      ;; updated child definitions.
+      ;;
+      ;; * For a related code example, see `tree-widget-action', the
+      ;; built-in function for toggling the collapsed/expanded state
+      ;; of a `tree-widget'. It also calls
+      ;; `tree-widget-children-value-save' to save the
+      ;; collapsed/expanded state of the descendants.
+      (or expanded
+          (tree-widget-children-value-save tree-widget))
       (let* ((new-label (if expanded
                            (elisp-tred--get-expanded-label treesit-node)
                          (elisp-tred--get-collapsed-label treesit-node)))
@@ -429,7 +453,10 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
        (widget-put label-widget :tag new-label)
        ;; Update the :open property
        (widget-put tree-widget :open expanded)
-       ;; Redraw the widget
+       ;; Redraw the widget.
+       ;; It's not super intuitive, but setting the "value" of the
+       ;; tree-widget to nil or non-nil triggers a redraw of the
+       ;; widget in its collapsed or expanded state, respectively.
        (widget-apply tree-widget :value-set expanded)))))
 
 (defun elisp-tred--expand-tree-widget-recursively (tree-widget)
