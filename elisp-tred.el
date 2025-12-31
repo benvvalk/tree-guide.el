@@ -141,7 +141,12 @@ ALIST is an association list of additional parameters."
    ;; bracket "("/"[" for the tree node icon, it looks
    ;; weird to introduce a space before the list/vector
    ;; contents.
-   tree-widget-space-width 0)
+   tree-widget-space-width 0
+   ;; Disable use of images for tree guides. We use Unicode box-drawing
+   ;; to draw the tree guide instead. Not only does it look better,
+   ;; but it also makes it possible to use `elisp-tred' within
+   ;; a terminal Emacs session.
+   tree-widget-image-enable nil)
   (add-hook 'xref-backend-functions #'elisp--xref-backend nil t)
   ;; Customize xref to open definitions in elisp-tred buffers
   (setq-local xref-show-definitions-function #'elisp-tred--xref-show-definitions)
@@ -352,8 +357,7 @@ form surrounding POINT."
         (message "elisp-tred: syntax highlighting...done (%.3f sec)" (car result))))
     (with-current-buffer tree-buffer
       (elisp-tred-mode)
-      (let ((inhibit-read-only t)
-            (tree-widget-image-enable nil))
+      (let ((inhibit-read-only t))
         (erase-buffer)
         (message "elisp-tred: creating root widget...")
 		(let ((result (benchmark-run (widget-create (elisp-tred--get-tree-widget root-node)))))
@@ -446,9 +450,8 @@ When EXPANDED is nil, collapse the tree widget and hide its children."
       (or expanded
           (tree-widget-children-value-save tree-widget))
       (let* ((new-label (if expanded
-                           (elisp-tred--get-expanded-label treesit-node)
-                         (elisp-tred--get-collapsed-label treesit-node)))
-            (tree-widget-image-enable nil))
+                            (elisp-tred--get-expanded-label treesit-node)
+                          (elisp-tred--get-collapsed-label treesit-node))))
        ;; Update the tree node label
        (widget-put label-widget :tag new-label)
        ;; Update the :open property
