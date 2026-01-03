@@ -42,19 +42,6 @@ in a single line, which can be very long indeed.")
 (defvar-local elisp-tred--current-node-overlay nil
   "Overlay used to highlight the tree node label on the current line.")
 
-(defvar-keymap elisp-tred-mode-map
-  "TAB" #'elisp-tred-toggle-node
-  "C-<tab>" #'elisp-tred-toggle-node-recursively
-  "RET" #'elisp-tred-jump-to-source-buffer
-  "n" #'elisp-tred-goto-next-sibling
-  "p" #'elisp-tred-goto-prev-sibling
-  "f" #'elisp-tred-goto-first-child
-  "F" #'elisp-tred-goto-first-child-and-expand
-  "b" #'elisp-tred-goto-parent
-  "B" #'elisp-tred-goto-parent-and-collapse
-  "<backtab>" #'elisp-tred-goto-parent-and-collapse ;; Shift+Tab
-  )
-
 ;;; `xref' backend
 ;;
 ;; The code in this section implements the `xref' backend for
@@ -131,28 +118,6 @@ ALIST is an association list of additional parameters."
              (choice (completing-read "Choose definition: " collection nil t))
              (xref (cdr (assoc choice collection))))
         (elisp-tred--xref-show-definition xref))))))
-
-(define-derived-mode elisp-tred-mode special-mode
-  "TM"
-  "Mode for displaying lisp code as a tree."
-  (setq-local
-   ;; Remove default space between tree node icon and
-   ;; label. For lists/vectors, we use the opening
-   ;; bracket "("/"[" for the tree node icon, it looks
-   ;; weird to introduce a space before the list/vector
-   ;; contents.
-   tree-widget-space-width 0
-   ;; Disable use of images for tree guides. We use Unicode box-drawing
-   ;; to draw the tree guide instead. Not only does it look better,
-   ;; but it also makes it possible to use `elisp-tred' within
-   ;; a terminal Emacs session.
-   tree-widget-image-enable nil)
-  (add-hook 'xref-backend-functions #'elisp--xref-backend nil t)
-  ;; Customize xref to open definitions in elisp-tred buffers
-  (setq-local xref-show-definitions-function #'elisp-tred--xref-show-definitions)
-  ;; Add hook to highlight node label on current line
-  ;; (automatically updates when cursor moves)
-  (add-hook 'post-command-hook #'elisp-tred--update-current-node-highlight nil t))
 
 ;;; Custom "widgets"
 ;;
@@ -317,7 +282,29 @@ Emacs is restarted."
         (user-error "Elisp-tred aborted"))))
   (unless (treesit-ready-p 'elisptred)
     (user-error "Failed to load elisp-tred grammar (buffer too large?)"))
-  (treesit-parser-create 'elisptred (current-buffer) t))
+  (let ((parser (treesit-parser-create 'elisptred (current-buffer) t)))
+    ;; Set up a hook to call the `elisp-tred--on-treesit-reparse'
+    ;; function whenever the `treesit' parse tree changes. This allows
+    ;; us to keep the overlays for the tree guides in sync with the
+    ;; structure of the elisp code.
+    ;;
+    ;; Note: At first, I expected that `treesit' would automatically
+    ;; reparse the buffer and call `elisp-tred--on-treesit-reparse'
+    ;; whenever the user edited text in the buffer. However, `treesit'
+    ;; does not work this way! Instead, `treesit' lazily reparses the
+    ;; buffer when any elisp code makes an API call that accesses the
+    ;; `treesit' parse tree (e.g. by calling
+    ;; `treesit-parser-root-node').
+    ;;
+    ;; Since we need to trigger the `treesit' reparse ourselves by
+    ;; making `treesit' API calls, we set up another hook for
+    ;; `pre-redisplay-functions' to do that on a repeating basis.  In
+    ;; addition, we call `elisp-tred--force-treesit-reparse' below to
+    ;; perform the initial `treesit' parse after enabling
+    ;; `elisp-tred-overlay-mode'.
+	(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
+    (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
+    (elisp-tred--force-treesit-reparse)))
 
 (defun elisp-tred--buffer-name (treesit-node)
   "Return a buffer name for an elisp-tred buffer that is rooted at
@@ -1261,5 +1248,154 @@ to the current cursor position in the elisp-tred buffer."
         (with-current-buffer source-buffer
             (goto-char clamped-pos))
         (display-buffer source-buffer '(display-buffer-same-window))))))
+
+;;; New overlay-based implementation
+
+;;;; Tree-sitter
+
+(defun elisp-tred--force-treesit-reparse ()
+    "Force `treesit' to reparse the buffer.
+
+Note: `treesit' does not automatically reparse the buffer whenever the
+user makes an edit. Instead, it lazily reparses the buffer next time
+some elisp code makes an API call that accesses `treesit' parse tree,
+e.g. by calling `treesit-parser-root-node'."
+    (when-let ((parsers (elisp-tred--treesit-parsers)))
+      (dolist (parser parsers)
+        ;; Note: Any `treesit' API call that accesses the parse tree
+        ;; should also work here (see Note above).
+        (treesit-parser-root-node parser))))
+
+(defvar-local elisp-tred--pre-redisplay-tick nil
+  "The last `buffer-chars-modified-tick' that we've processed.  This
+is used to work the bug/quirk that Emacs calls its redisplay hooks
+multiple times for the same redisplay event, and the exact number of
+hook invocations isn't even predictable.")
+
+(defun elisp-tred--pre-redisplay (&rest _)
+  "Force reparse of treesit parser, which will trigger notifiers.
+This function is added to `pre-redisplay-functions' to ensure that
+the parse tree is updated before redisplay, similar to how treesit.el
+handles font-lock updates."
+  (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
+    (elisp-tred--force-treesit-reparse)
+    (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
+
+(defun elisp-tred--on-treesit-reparse (ranges _parser)
+  "Update elisp-tred overlays (e.g. tree guides) when the
+`treesit' parse tree changes."
+  (remove-overlays nil nil 'category 'elisp-tred-guide)
+  (let ((root-node (treesit-buffer-root-node 'elisptred)))
+    (elisp-tred--create-tree-guide-overlays root-node)))
+
+(defun elisp-tred--treesit-parsers ()
+  "Return the `treesit' parser object for `elisp-tred'."
+  (let ((parsers (treesit-parser-list)))
+    (seq-filter (lambda (parser)
+                (eq 'elisptred (treesit-parser-language parser)))
+              parsers)))
+
+(defun elisp-tred--treesit-teardown ()
+  "Destroy `treesit' parser object for `elisp-tred', and disable
+all treesit-related hook functions."
+  (when-let ((parsers (elisp-tred--treesit-parsers)))
+    (dolist (parser parsers)
+      (treesit-parser-remove-notifier parser #'elisp-tred--on-treesit-reparse)
+      (remove-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay t)
+      (treesit-parser-delete parser))))
+
+;;;; Tree guide rendering
+
+(setq elisp-tred--guide "│ ")
+(setq elisp-tred--guide-with-handle "├─")
+(setq elisp-tred--guide-with-handle-last "╰─")
+(setq elisp-tred--no-guide "  ")
+
+(defun elisp-tred--last-child-p (node)
+  "Return non-nil if the treesit node NODE is the last named child
+of its parent node.
+
+Note: If NODE has no parent treesit node (i.e. it is the root node of
+the treesit parse tree), this function will return `nil'."
+  (when-let* ((parent (treesit-node-parent node))
+              (siblings (treesit-node-children parent t)))
+    (treesit-node-eq node (car (last siblings)))))
+
+(defun elisp-tred--guide-flags (node &optional flags)
+  "Return the `guide flags' for treesit node NODE.
+
+The `guide flags' are a list consisting of one flag per ancestor node,
+plus one flag for NODE itself. The flags indicate which tree guide
+characters should be rendered at the beginning of the line for NODE. A
+value of `t' indicates that a guide (e.g. `|') should be drawn in that
+position, whereas a value of `nil' indicates that a guide should not
+be drawn in that position (e.g. ` ')."
+  (if-let ((parent (treesit-node-parent node)))
+    (let ((flag (not (elisp-tred--last-child-p node))))
+      (push flag flags)
+      (elisp-tred--guide-flags parent flags))
+    flags))
+
+(defun elisp-tred--guide-flags-to-string (flags)
+  "Convert the guide flags FLAGS to a string that will be shown in the
+buffer.
+
+See the docstring for `elisp-tred--guide-flags' for an explanation
+about the purpose of the guide flags."
+  (when flags
+    (let* ((ancestor-flags (butlast flags))
+           (last-flag (car (last flags))))
+      (concat (mapconcat (lambda (flag)
+                           (if flag
+                               elisp-tred--guide
+                             elisp-tred--no-guide))
+                         ancestor-flags)
+              (if last-flag
+                  elisp-tred--guide-with-handle
+                elisp-tred--guide-with-handle-last)))))
+
+(defun elisp-tred--tree-guides-string (node)
+  "Return the string of tree guide characters (pipes and spaces) that
+should be inserted at the beginning of the line for treesit node
+NODE."
+  (when-let ((parent (treesit-node-parent node)))
+    (let ((flags (elisp-tred--guide-flags parent)))
+      (concat (elisp-tred--guide-flags-to-string flags)
+              (if (elisp-tred--last-child-p node)
+                  elisp-tred--guide-with-handle-last
+                elisp-tred--guide-with-handle)))))
+
+(defun elisp-tred--create-tree-guide-overlay (node guide-flags)
+  "Insert the tree guide overlay at the beginning of the line
+for treesit node NODE. "
+  (when-let* ((guide-string (elisp-tred--guide-flags-to-string guide-flags))
+              (start (treesit-node-start node))
+              (end (treesit-node-end node))
+              (overlay (make-overlay start end)))
+    (overlay-put overlay 'category 'elisp-tred-guide)
+    (overlay-put overlay 'before-string (concat "\n" guide-string))))
+
+(defun elisp-tred--create-tree-guide-overlays (node &optional guide-flags)
+  "Create the tree guide overlays for treesit node NODE and all of its
+descendants.
+
+GUIDE-FLAGS is a list of booleans, one per ancestor node, that is used
+to construct the tree guide lines."
+  (elisp-tred--create-tree-guide-overlay node guide-flags)
+  (let* ((children (treesit-node-children node t)))
+    (dolist (child children)
+      (let* ((guide-flag (not (elisp-tred--last-child-p child)))
+             (guide-flags (append guide-flags (list guide-flag))))
+        (elisp-tred--create-tree-guide-overlays child guide-flags)))))
+
+;;;; Minor mode definition
+
+(define-minor-mode elisp-tred-mode
+  "Display and edit elisp code as a tree."
+  :lighter " Tred"
+  (if elisp-tred-mode
+      (elisp-tred--treesit-init)
+    (remove-overlays nil nil 'category 'elisp-tred-guide)
+    (elisp-tred--treesit-teardown)))
 
 (provide 'elisp-tred)
