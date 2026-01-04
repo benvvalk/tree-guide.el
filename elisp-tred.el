@@ -1336,6 +1336,16 @@ all treesit-related hook functions."
   (elisp-tred--make-tree-guide-string "  ")
   "Horizontal space to replace vertical tree guide, for alignment")
 
+(defun elisp-tred--first-child-p (node)
+  "Return non-nil if the treesit node NODE is the first named child of
+its parent node.
+
+Note: If NODE has no parent treesit node (i.e. it is the root node of
+the treesit parse tree), this function will return `nil'."
+  (when-let* ((parent (treesit-node-parent node))
+              (siblings (treesit-node-children parent t)))
+    (treesit-node-eq node (car siblings))))
+
 (defun elisp-tred--last-child-p (node)
   "Return non-nil if the treesit node NODE is the last named child
 of its parent node.
@@ -1400,13 +1410,25 @@ for treesit node NODE. "
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'before-string (concat "\n" guide-string))))
 
+(defun elisp-tred--tree-guide-p (node)
+  "Return `t' if we should insert a tree guide overlay before
+treesit node NODE, or `nil' otherwise."
+  (unless
+      ;; Omit tree guide for first child of a sequence (list or
+      ;; vector), so that it is shown on the same line as its opening
+      ;; paren/bracket.
+      (and (elisp-tred--first-child-p node)
+           (not (elisp-tred--sequence-p node)))
+    t))
+
 (defun elisp-tred--create-tree-guide-overlays (node &optional guide-flags)
   "Create the tree guide overlays for treesit node NODE and all of its
 descendants.
 
 GUIDE-FLAGS is a list of booleans, one per ancestor node, that is used
 to construct the tree guide lines."
-  (elisp-tred--create-tree-guide-overlay node guide-flags)
+  (when (elisp-tred--tree-guide-p node)
+    (elisp-tred--create-tree-guide-overlay node guide-flags))
   (let* ((children (treesit-node-children node t)))
     (dolist (child children)
       (let* ((guide-flag (not (elisp-tred--last-child-p child)))
