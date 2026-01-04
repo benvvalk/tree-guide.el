@@ -315,7 +315,7 @@ TREESIT-NODE."
             ((member child0-text '("defun" "defmacro")))
             (child1 (treesit-node-child treesit-node 1 t))
             (function-name (treesit-node-text child1)))
-      (format "*elisp-tred: %s*" function-name)  
+      (format "*elisp-tred: %s*" function-name)
 	(format "*elisp-tred*")))
 
 (defun elisp-tred ()
