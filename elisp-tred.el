@@ -1284,7 +1284,8 @@ handles font-lock updates."
 (defun elisp-tred--on-treesit-reparse (ranges _parser)
   "Update elisp-tred overlays (e.g. tree guides) when the
 `treesit' parse tree changes."
-  (remove-overlays nil nil 'category 'elisp-tred-guide)
+  (elisp-tred--remove-overlays)
+  (elisp-tred--create-whitespace-overlays)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
     (elisp-tred--create-tree-guide-overlays root-node)))
 
@@ -1388,6 +1389,68 @@ to construct the tree guide lines."
              (guide-flags (append guide-flags (list guide-flag))))
         (elisp-tred--create-tree-guide-overlays child guide-flags)))))
 
+(defun elisp-tred--create-whitespace-overlays ()
+  "Create overlays to hide non-significant whitespace characters.
+
+Uses tree-sitter to identify which whitespace is significant (e.g.,
+spaces within strings and comments) vs non-significant (e.g.,
+indentation and spacing between tokens). Only non-significant
+whitespace is hidden."
+  (let ((root-node (treesit-buffer-root-node 'elisptred)))
+    (elisp-tred--hide-non-significant-whitespace root-node)))
+
+(defun elisp-tred--hide-non-significant-whitespace (node)
+  "Hide all non-significant whitespace using overlays.
+
+`Non-significant whitespace' means whitespace that is not contained
+within a string or comment (e.g. indentation and newlines). We want
+to hide all such whitespace so that we display the tree structure in a
+consistent and predictable manner."
+  (let ((children (treesit-node-children node t)))
+    (when children
+      ;; Hide whitespace before the first child
+      (let* ((first-child (car children))
+             (gap-start (treesit-node-start node))
+             (gap-end (treesit-node-start first-child)))
+        (elisp-tred--hide-whitespace-in-range gap-start gap-end))
+
+      ;; Hide whitespace between consecutive children
+      (let ((prev-child (car children)))
+        (dolist (curr-child (cdr children))
+          (let ((gap-start (treesit-node-end prev-child))
+                (gap-end (treesit-node-start curr-child)))
+            (elisp-tred--hide-whitespace-in-range gap-start gap-end))
+          (setq prev-child curr-child)))
+
+      ;; Hide whitespace after the last child
+      (let* ((last-child (car (last children)))
+             (gap-start (treesit-node-end last-child))
+             (gap-end (treesit-node-end node)))
+        (elisp-tred--hide-whitespace-in-range gap-start gap-end))
+
+      ;; Recursively process children
+      (dolist (child children)
+        (elisp-tred--hide-non-significant-whitespace child)))))
+
+(defun elisp-tred--hide-whitespace-in-range (start end)
+  "Hide all whitespace characters in the range from START to END."
+  (when (< start end)
+    (save-excursion
+      (goto-char start)
+      (while (re-search-forward "[ \t\n\r]+" end t)
+        (let ((overlay (make-overlay (match-beginning 0) (match-end 0))))
+          (overlay-put overlay 'category 'elisp-tred-whitespace)
+          (overlay-put overlay 'invisible t))))))
+
+(defun elisp-tred--remove-overlays ()
+  "Remove all overlays created by elisp-tred.
+
+Elisp-tred creates overlays to: (1) show the tree guides as virtual
+text, and (2) to hide whitespace characters. There purpose of the
+latter is to ensure a predictable/consistent layout of the tree."
+    (remove-overlays nil nil 'category 'elisp-tred-guide)
+    (remove-overlays nil nil 'category 'elisp-tred-whitespace))
+
 ;;;; Minor mode definition
 
 (define-minor-mode elisp-tred-mode
@@ -1395,7 +1458,7 @@ to construct the tree guide lines."
   :lighter " Tred"
   (if elisp-tred-mode
       (elisp-tred--treesit-init)
-    (remove-overlays nil nil 'category 'elisp-tred-guide)
+    (elisp-tred--remove-overlays)
     (elisp-tred--treesit-teardown)))
 
 (provide 'elisp-tred)
