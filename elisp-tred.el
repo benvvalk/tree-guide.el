@@ -1307,10 +1307,34 @@ all treesit-related hook functions."
 
 ;;;; Tree guide rendering
 
-(setq elisp-tred--guide "│ ")
-(setq elisp-tred--guide-with-handle "├─")
-(setq elisp-tred--guide-with-handle-last "╰─")
-(setq elisp-tred--no-guide "  ")
+(defcustom elisp-tred-tree-guide-face 'shadow
+  "The face for tree guide characters.")
+
+(defvar elisp-tred--guide-spacer
+  (propertize " " 'display '(space :width 0.5))
+  "Horizontal space between tree guide handle and elisp code.")
+
+(defun elisp-tred--make-tree-guide-string (str)
+  "Apply formatting for tree guide strings."
+  (propertize (concat str elisp-tred--guide-spacer)
+              'face
+              elisp-tred-tree-guide-face))
+
+(defvar elisp-tred--guide
+  (elisp-tred--make-tree-guide-string "│ ")
+  "Vertical tree guide")
+
+(defvar elisp-tred--guide-with-handle
+  (elisp-tred--make-tree-guide-string "├─")
+  "Vertical tree guide with handle")
+
+(defvar elisp-tred--guide-with-handle-last
+  (elisp-tred--make-tree-guide-string "╰─")
+  "Vertical tree guide with handle, for last child")
+
+(defvar elisp-tred--no-guide
+  (elisp-tred--make-tree-guide-string "  ")
+  "Horizontal space to replace vertical tree guide, for alignment")
 
 (defun elisp-tred--last-child-p (node)
   "Return non-nil if the treesit node NODE is the last named child
