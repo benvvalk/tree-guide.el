@@ -1499,12 +1499,41 @@ latter is to ensure a predictable/consistent layout of the tree."
 
 ;;;; Minor mode definition
 
+(defvar-local elisp-tred--visual-line-mode-prev
+	visual-line-mode
+    "Stores the user's original `visual-line-mode' state, before we
+turned on `visual-line-mode' during `elisp-tred-mode'
+initialization.")
+
+(defun elisp-tred--init ()
+  (elisp-tred--treesit-init)
+  ;; Turn on `visual-line-mode'.
+  ;;
+  ;; Scrolling behaviour in `elisp-tred' without `visual-line-mode'
+  ;; enables is pretty unpleasant, because elisp-tred's overlays
+  ;; drastically change where the line breaks are located.
+  ;;
+  ;; Note: We save the user's original `visual-line-mode' state in
+  ;; `elisp-tred--visual-line-mode-prev', so that we can restore it
+  ;; when `elisp-tred-mode' is disabled.
+  (setq elisp-tred--visual-line-mode-prev visual-line-mode)
+  (visual-line-mode 1))
+
+(defun elisp-tred--teardown ()
+  "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
+and restore `visual-line-mode' to its original value before enabling
+`elisp-tred-mode'."
+  (elisp-tred--remove-overlays)
+  (elisp-tred--treesit-teardown)
+  ;; restore the user's original `visual-line-mode' state.
+  (unless elisp-tred--visual-line-mode-prev
+    (visual-line-mode -1)))
+
 (define-minor-mode elisp-tred-mode
   "Display and edit elisp code as a tree."
   :lighter " Tred"
   (if elisp-tred-mode
-      (elisp-tred--treesit-init)
-    (elisp-tred--remove-overlays)
-    (elisp-tred--treesit-teardown)))
+      (elisp-tred--init)
+    (elisp-tred--teardown)))
 
 (provide 'elisp-tred)
