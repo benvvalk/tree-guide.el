@@ -1435,6 +1435,14 @@ to construct the tree guide lines."
              (guide-flags (append guide-flags (list guide-flag))))
         (elisp-tred--create-tree-guide-overlays child guide-flags)))))
 
+;;;; Whitespace rendering
+;;
+;; We use overlays to both hide real whitespace and to add virtual
+;; whitespace (e.g. newlines), to ensure that the tree is always
+;; rendered in a consistent manner with respect to the structure of
+;; the code, rather than the user's personal choice of
+;; whitespace/indentation.
+
 (defun elisp-tred--create-whitespace-overlays ()
   "Create overlays to hide non-significant whitespace characters.
 
