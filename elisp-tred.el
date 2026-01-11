@@ -1355,7 +1355,7 @@ the treesit parse tree), this function will return `nil'."
               (siblings (treesit-node-children parent t)))
     (treesit-node-eq node (car (last siblings)))))
 
-(defun elisp-tred--guide-flags (node &optional flags)
+(defun elisp-tred--tree-guide-flags (node &optional flags)
   "Return the `guide flags' for treesit node NODE.
 
 The `guide flags' are a list consisting of one flag per ancestor node,
@@ -1367,14 +1367,14 @@ be drawn in that position (e.g. ` ')."
   (if-let ((parent (treesit-node-parent node)))
     (let ((flag (not (elisp-tred--last-child-p node))))
       (push flag flags)
-      (elisp-tred--guide-flags parent flags))
+      (elisp-tred--tree-guide-flags parent flags))
     flags))
 
-(defun elisp-tred--guide-flags-to-string (flags)
+(defun elisp-tred--tree-guide-flags-to-string (flags)
   "Convert the guide flags FLAGS to a string that will be shown in the
 buffer.
 
-See the docstring for `elisp-tred--guide-flags' for an explanation
+See the docstring for `elisp-tred--tree-guide-flags' for an explanation
 about the purpose of the guide flags."
   (when flags
     (let* ((ancestor-flags (butlast flags))
@@ -1391,7 +1391,7 @@ about the purpose of the guide flags."
 (defun elisp-tred--create-tree-guide-overlay (node guide-flags)
   "Insert the tree guide overlay at the beginning of the line
 for treesit node NODE. "
-  (when-let* ((guide-string (elisp-tred--guide-flags-to-string guide-flags))
+  (when-let* ((guide-string (elisp-tred--tree-guide-flags-to-string guide-flags))
               (start (treesit-node-start node))
               (end (treesit-node-end node))
               (overlay (make-overlay start end)))
@@ -1493,7 +1493,7 @@ whitespace/indentation."
 
 (defun elisp-tred--create-overlays (node)
   "Create tree guide and whitespace overlays for treesit node NODE."
-  (let ((tree-guide-flags (elisp-tred--guide-flags node))
+  (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
         (start (treesit-node-start node))
         (end (treesit-node-end node)))
     (elisp-tred--create-whitespace-overlays node)
