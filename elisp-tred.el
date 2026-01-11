@@ -1490,6 +1490,12 @@ whitespace/indentation."
     (remove-overlays nil nil 'category 'elisp-tred-guide)
     (remove-overlays nil nil 'category 'elisp-tred-whitespace))
 
+(defun elisp-tred--remove-overlays (node)
+  "Remove tree guide and whitespace overlays for treesit node NODE."
+  (let ((start (treesit-node-start node))
+        (end (treesit-node-end node)))
+    (remove-overlays start end 'category 'elisp-tred-guide)
+    (remove-overlays start end 'category 'elisp-tred-whitespace)))
 
 (defun elisp-tred--create-overlays (node)
   "Create tree guide and whitespace overlays for treesit node NODE."
