@@ -1286,8 +1286,7 @@ handles font-lock updates."
 `treesit' parse tree changes."
   (elisp-tred--remove-all-overlays-in-buffer)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (elisp-tred--create-whitespace-overlays root-node)
-    (elisp-tred--create-tree-guide-overlays root-node)))
+    (elisp-tred--create-overlays root-node)))
 
 (defun elisp-tred--treesit-parsers ()
   "Return the `treesit' parser object for `elisp-tred'."
@@ -1490,6 +1489,15 @@ structure, rather than the author's personal preferences for
 whitespace/indentation."
     (remove-overlays nil nil 'category 'elisp-tred-guide)
     (remove-overlays nil nil 'category 'elisp-tred-whitespace))
+
+
+(defun elisp-tred--create-overlays (node)
+  "Create tree guide and whitespace overlays for treesit node NODE."
+  (let ((tree-guide-flags (elisp-tred--guide-flags node))
+        (start (treesit-node-start node))
+        (end (treesit-node-end node)))
+    (elisp-tred--create-whitespace-overlays node)
+    (elisp-tred--create-tree-guide-overlays node tree-guide-flags)))
 
 ;;;; Evil integration
 ;;
