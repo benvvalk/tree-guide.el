@@ -1284,7 +1284,7 @@ handles font-lock updates."
 (defun elisp-tred--on-treesit-reparse (ranges _parser)
   "Update elisp-tred overlays (e.g. tree guides) when the
 `treesit' parse tree changes."
-  (elisp-tred--remove-overlays)
+  (elisp-tred--remove-all-overlays-in-buffer)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
     (elisp-tred--create-whitespace-overlays root-node)
     (elisp-tred--create-tree-guide-overlays root-node)))
@@ -1491,7 +1491,7 @@ consistent and predictable manner."
 ;; High-level functions for creating/removing elisp-tred overlays
 ;; (tree guides and whitespace).
 
-(defun elisp-tred--remove-overlays ()
+(defun elisp-tred--remove-all-overlays-in-buffer ()
   "Remove all overlays created by elisp-tred.
 
 Elisp-tred creates overlays to: (1) show the tree guides as virtual
@@ -1556,7 +1556,7 @@ initialization.")
   "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
 and restore `visual-line-mode' to its original value before enabling
 `elisp-tred-mode'."
-  (elisp-tred--remove-overlays)
+  (elisp-tred--remove-all-overlays-in-buffer)
   (elisp-tred--treesit-teardown)
   ;; restore the user's original `visual-line-mode' state.
   (unless elisp-tred--visual-line-mode-prev
