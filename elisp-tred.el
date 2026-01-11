@@ -1400,7 +1400,7 @@ about the purpose of the guide flags."
                   elisp-tred--guide-with-handle
                 elisp-tred--guide-with-handle-last)))))
 
-(defun elisp-tred--create-tree-guide-overlay (node guide-flags)
+(defun elisp-tred--create-tree-guide-overlay (node folded guide-flags)
   "Insert the tree guide overlay at the beginning of the line
 for treesit node NODE. "
   ;; Implementation note: I intentionally pass `start start' to
@@ -1414,7 +1414,20 @@ for treesit node NODE. "
               (start (treesit-node-start node))
               (overlay (make-overlay start start)))
     (overlay-put overlay 'category 'elisp-tred-guide)
+    (overlay-put overlay 'elisp-tred-folded folded)
     (overlay-put overlay 'before-string (concat "\n" guide-string))))
+
+(defun elisp-tred--tree-guide-overlay-p (overlay)
+  "Return non-nil if OVERLAY is a tree guide overlay, or nil
+otherwise."
+  (eq (overlay-get overlay 'category) 'elisp-tred-guide))
+
+(defun elisp-tred--tree-guide-overlay (node)
+  "Return the tree guide overlay for treesit node NODE, or nil if NODE
+does not have a tree guide overlay."
+  (let* ((start (treesit-node-start node))
+         (overlays (overlays-in start start)))
+    (seq-find #'elisp-tred--tree-guide-overlay-p overlays)))
 
 (defun elisp-tred--tree-guide-p (node)
   "Return `t' if we should insert a tree guide overlay before
@@ -1434,7 +1447,7 @@ descendants.
 GUIDE-FLAGS is a list of booleans, one per ancestor node, that is used
 to construct the tree guide lines."
   (when (elisp-tred--tree-guide-p node)
-    (elisp-tred--create-tree-guide-overlay node guide-flags))
+    (elisp-tred--create-tree-guide-overlay node folded guide-flags))
   (unless folded
     (let* ((children (treesit-node-children node t)))
      (dolist (child children)
@@ -1538,6 +1551,11 @@ whitespace/indentation."
 ;; Implements collapsing/expanding of the current line using the TAB
 ;; key.
 
+(defun elisp-tred--folded-p (node)
+  "Return non-nil if treesit node NODE is currently folded."
+  (when-let* ((overlay (elisp-tred--tree-guide-overlay node)))
+    (overlay-get overlay 'elisp-tred-folded)))
+
 (defun elisp-tred--set-node-folded (node folded)
   "Set folded state of treesit node NODE."
   (elisp-tred--remove-overlays node)
@@ -1547,6 +1565,13 @@ whitespace/indentation."
   "Set folded state of treesit node on current line."
   (when-let ((node (elisp-tred--node-for-current-line)))
     (elisp-tred--set-node-folded node folded)))
+
+(defun elisp-tred-toggle-current-line-folded ()
+  "Toggle the folded/unfolded state of the current line."
+  (interactive)
+  (when-let* ((node (elisp-tred--node-for-current-line)))
+    (let ((folded (elisp-tred--folded-p node)))
+      (elisp-tred--set-node-folded node (not folded)))))
 
 ;;;; Evil integration
 ;;
@@ -1575,8 +1600,14 @@ whitespace/indentation."
       (kbd "<up>") #'evil-previous-visual-line))
   (dolist (state '(normal visual motion))
     (evil-define-minor-mode-key state 'elisp-tred-mode
+      (kbd "TAB") #'elisp-tred-toggle-current-line-folded
       (kbd "j") #'evil-next-visual-line
       (kbd "k") #'evil-previous-visual-line)))
+
+;;;; Keymap
+
+(defvar-keymap elisp-tred-mode-map
+  "TAB" #'elisp-tred-toggle-current-line-folded)
 
 ;;;; Minor mode definition
 
