@@ -1495,8 +1495,10 @@ consistent and predictable manner."
   "Remove all overlays created by elisp-tred.
 
 Elisp-tred creates overlays to: (1) show the tree guides as virtual
-text, and (2) to hide whitespace characters. There purpose of the
-latter is to ensure a predictable/consistent layout of the tree."
+text, and (2) to hide whitespace characters. The purpose of the latter
+is to ensure a consistent rendering of the tree based on code
+structure, rather than the author's personal preferences for
+whitespace/indentation."
     (remove-overlays nil nil 'category 'elisp-tred-guide)
     (remove-overlays nil nil 'category 'elisp-tred-whitespace))
 
