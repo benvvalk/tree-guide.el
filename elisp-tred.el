@@ -1389,17 +1389,6 @@ about the purpose of the guide flags."
                   elisp-tred--guide-with-handle
                 elisp-tred--guide-with-handle-last)))))
 
-(defun elisp-tred--tree-guides-string (node)
-  "Return the string of tree guide characters (pipes and spaces) that
-should be inserted at the beginning of the line for treesit node
-NODE."
-  (when-let ((parent (treesit-node-parent node)))
-    (let ((flags (elisp-tred--guide-flags parent)))
-      (concat (elisp-tred--guide-flags-to-string flags)
-              (if (elisp-tred--last-child-p node)
-                  elisp-tred--guide-with-handle-last
-                elisp-tred--guide-with-handle)))))
-
 (defun elisp-tred--create-tree-guide-overlay (node guide-flags)
   "Insert the tree guide overlay at the beginning of the line
 for treesit node NODE. "
