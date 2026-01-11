@@ -303,7 +303,7 @@ Emacs is restarted."
     ;; perform the initial `treesit' parse after enabling
     ;; `elisp-tred-overlay-mode'.
 	(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
-    (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
+    ;; (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
     (elisp-tred--force-treesit-reparse)))
 
 (defun elisp-tred--buffer-name (treesit-node)
