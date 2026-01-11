@@ -1285,8 +1285,8 @@ handles font-lock updates."
   "Update elisp-tred overlays (e.g. tree guides) when the
 `treesit' parse tree changes."
   (elisp-tred--remove-overlays)
-  (elisp-tred--create-whitespace-overlays)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
+    (elisp-tred--create-whitespace-overlays root-node)
     (elisp-tred--create-tree-guide-overlays root-node)))
 
 (defun elisp-tred--treesit-parsers ()
@@ -1443,17 +1443,7 @@ to construct the tree guide lines."
 ;; the code, rather than the user's personal choice of
 ;; whitespace/indentation.
 
-(defun elisp-tred--create-whitespace-overlays ()
-  "Create overlays to hide non-significant whitespace characters.
-
-Uses tree-sitter to identify which whitespace is significant (e.g.,
-spaces within strings and comments) vs non-significant (e.g.,
-indentation and spacing between tokens). Only non-significant
-whitespace is hidden."
-  (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (elisp-tred--hide-non-significant-whitespace root-node)))
-
-(defun elisp-tred--hide-non-significant-whitespace (node)
+(defun elisp-tred--create-whitespace-overlays (node)
   "Hide all non-significant whitespace using overlays.
 
 `Non-significant whitespace' means whitespace that is not contained
@@ -1484,7 +1474,7 @@ consistent and predictable manner."
 
       ;; Recursively process children
       (dolist (child children)
-        (elisp-tred--hide-non-significant-whitespace child)))))
+        (elisp-tred--create-whitespace-overlays child)))))
 
 (defun elisp-tred--hide-whitespace-in-range (start end)
   "Hide all whitespace characters in the range from START to END."
