@@ -1286,7 +1286,7 @@ handles font-lock updates."
 `treesit' parse tree changes."
   (elisp-tred--remove-all-overlays-in-buffer)
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (elisp-tred--create-overlays root-node)))
+    (elisp-tred--create-overlays root-node nil)))
 
 (defun elisp-tred--treesit-parsers ()
   "Return the `treesit' parser object for `elisp-tred'."
@@ -1303,6 +1303,18 @@ all treesit-related hook functions."
       (treesit-parser-remove-notifier parser #'elisp-tred--on-treesit-reparse)
       (remove-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay t)
       (treesit-parser-delete parser))))
+
+(defun elisp-tred--node-for-current-line ()
+  "Return the largest treesit node for the current line.
+
+If there are multiple treesit nodes shown on the current line, we
+return the largest node,i.e. the node closest to the root. For
+example, if the current line contains both the opening paren (`(') for
+a list and als the first element of the list, we would return the
+treesit node for the list."
+  (save-excursion
+    (beginning-of-visual-line)
+    (elisp-tred--treesit-node-at (point))))
 
 ;;;; Tree guide rendering
 
@@ -1409,7 +1421,7 @@ treesit node NODE, or `nil' otherwise."
            (not (elisp-tred--sequence-p node)))
     t))
 
-(defun elisp-tred--create-tree-guide-overlays (node &optional guide-flags)
+(defun elisp-tred--create-tree-guide-overlays (node folded &optional guide-flags)
   "Create the tree guide overlays for treesit node NODE and all of its
 descendants.
 
@@ -1417,11 +1429,12 @@ GUIDE-FLAGS is a list of booleans, one per ancestor node, that is used
 to construct the tree guide lines."
   (when (elisp-tred--tree-guide-p node)
     (elisp-tred--create-tree-guide-overlay node guide-flags))
-  (let* ((children (treesit-node-children node t)))
-    (dolist (child children)
-      (let* ((guide-flag (not (elisp-tred--last-child-p child)))
-             (guide-flags (append guide-flags (list guide-flag))))
-        (elisp-tred--create-tree-guide-overlays child guide-flags)))))
+  (unless folded
+    (let* ((children (treesit-node-children node t)))
+     (dolist (child children)
+       (let* ((guide-flag (not (elisp-tred--last-child-p child)))
+              (guide-flags (append guide-flags (list guide-flag))))
+         (elisp-tred--create-tree-guide-overlays child folded guide-flags))))))
 
 ;;;; Whitespace rendering
 ;;
@@ -1431,48 +1444,57 @@ to construct the tree guide lines."
 ;; the code, rather than the user's personal choice of
 ;; whitespace/indentation.
 
-(defun elisp-tred--create-whitespace-overlays (node)
+(defun elisp-tred--create-whitespace-overlays (node folded)
   "Hide all non-significant whitespace using overlays.
 
 `Non-significant whitespace' means whitespace that is not contained
 within a string or comment (e.g. indentation and newlines). We want
 to hide all such whitespace so that we display the tree structure in a
 consistent and predictable manner."
-  (let ((children (treesit-node-children node t)))
+  (let ((replacement (when folded " "))
+        (children (treesit-node-children node t)))
     (when children
       ;; Hide whitespace before the first child
       (let* ((first-child (car children))
              (gap-start (treesit-node-start node))
              (gap-end (treesit-node-start first-child)))
-        (elisp-tred--hide-whitespace-in-range gap-start gap-end))
+        (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
 
       ;; Hide whitespace between consecutive children
       (let ((prev-child (car children)))
         (dolist (curr-child (cdr children))
           (let ((gap-start (treesit-node-end prev-child))
                 (gap-end (treesit-node-start curr-child)))
-            (elisp-tred--hide-whitespace-in-range gap-start gap-end))
+            (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
           (setq prev-child curr-child)))
 
       ;; Hide whitespace after the last child
       (let* ((last-child (car (last children)))
              (gap-start (treesit-node-end last-child))
              (gap-end (treesit-node-end node)))
-        (elisp-tred--hide-whitespace-in-range gap-start gap-end))
+        (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
 
       ;; Recursively process children
       (dolist (child children)
-        (elisp-tred--create-whitespace-overlays child)))))
+        (elisp-tred--create-whitespace-overlays child folded)))))
 
-(defun elisp-tred--hide-whitespace-in-range (start end)
-  "Hide all whitespace characters in the range from START to END."
+(defun elisp-tred--hide-whitespace-in-range (start end &optional replacement)
+  "Hide each contiguous sequence of whitespace characters in the range
+of START to END, using overlays.
+
+If the optional string argument REPLACEMENT is provided, visually
+replace each contiguous sequence of whitespace characters with
+REPLACEMENT, using overlays. Otherwise, make the whitespace sequences
+fully invisible."
   (when (< start end)
     (save-excursion
       (goto-char start)
       (while (re-search-forward "[ \t\n\r]+" end t)
         (let ((overlay (make-overlay (match-beginning 0) (match-end 0))))
           (overlay-put overlay 'category 'elisp-tred-whitespace)
-          (overlay-put overlay 'invisible t))))))
+          (if replacement
+              (overlay-put overlay 'display replacement)
+            (overlay-put overlay 'invisible t)))))))
 
 ;;;; High-level overlay functions
 ;;
@@ -1497,13 +1519,28 @@ whitespace/indentation."
     (remove-overlays start end 'category 'elisp-tred-guide)
     (remove-overlays start end 'category 'elisp-tred-whitespace)))
 
-(defun elisp-tred--create-overlays (node)
+(defun elisp-tred--create-overlays (node folded)
   "Create tree guide and whitespace overlays for treesit node NODE."
   (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
         (start (treesit-node-start node))
         (end (treesit-node-end node)))
-    (elisp-tred--create-whitespace-overlays node)
-    (elisp-tred--create-tree-guide-overlays node tree-guide-flags)))
+    (elisp-tred--create-whitespace-overlays node folded)
+    (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
+
+;;;; Folding
+;;
+;; Implements collapsing/expanding of the current line using the TAB
+;; key.
+
+(defun elisp-tred--set-node-folded (node folded)
+  "Set folded state of treesit node NODE."
+  (elisp-tred--remove-overlays node)
+  (elisp-tred--create-overlays node folded))
+
+(defun elisp-tred--set-current-line-folded (folded)
+  "Set folded state of treesit node on current line."
+  (when-let ((node (elisp-tred--node-for-current-line)))
+    (elisp-tred--set-node-folded node folded)))
 
 ;;;; Evil integration
 ;;
