@@ -1403,10 +1403,16 @@ about the purpose of the guide flags."
 (defun elisp-tred--create-tree-guide-overlay (node guide-flags)
   "Insert the tree guide overlay at the beginning of the line
 for treesit node NODE. "
+  ;; Implementation note: I intentionally pass `start start' to
+  ;; `make-overlay' here to create a zero-length overlay. Zero-length
+  ;; overlays are allowed by Emacs and they work fine. The main reason
+  ;; I want to use zero-length overlays is that ;I believe they will
+  ;; perform better than overlays that span the full range from
+  ;; `treesit-node-start' to `treesit-node-end', because they reduce
+  ;; the number of overlaps between different overlays in the buffer.
   (when-let* ((guide-string (elisp-tred--tree-guide-flags-to-string guide-flags))
               (start (treesit-node-start node))
-              (end (treesit-node-end node))
-              (overlay (make-overlay start end)))
+              (overlay (make-overlay start start)))
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'before-string (concat "\n" guide-string))))
 
