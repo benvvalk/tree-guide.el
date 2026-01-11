@@ -1486,6 +1486,11 @@ consistent and predictable manner."
           (overlay-put overlay 'category 'elisp-tred-whitespace)
           (overlay-put overlay 'invisible t))))))
 
+;;;; High-level overlay functions
+;;
+;; High-level functions for creating/removing elisp-tred overlays
+;; (tree guides and whitespace).
+
 (defun elisp-tred--remove-overlays ()
   "Remove all overlays created by elisp-tred.
 
