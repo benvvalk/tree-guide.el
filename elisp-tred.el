@@ -1611,25 +1611,46 @@ whitespace/indentation."
 
 ;;;; Minor mode definition
 
-(defvar-local elisp-tred--visual-line-mode-prev
-	visual-line-mode
-    "Stores the user's original `visual-line-mode' state, before we
-turned on `visual-line-mode' during `elisp-tred-mode'
-initialization.")
+(defvar-local elisp-tred--saved-local-vars nil
+  "The previous buffer-local values of any variables that were
+modified during intialization of `elisp-tred-mode'. The value is a
+list of cons cells, where the CAR of each cons cell is the variable
+name, and the CDR is the variable value.
+
+`elisp-tred--saved-local-vars' is restore the user's previous values
+for buffer-local variables when `elisp-tred-mode' is disabled. For
+example, `elisp-tred-mode' always sets `truncate-lines' to `t' to
+disable line-wrapping, but the user might have set a different buffer
+local value for `truncate-lines', prior enabling `elisp-tred-mode'.")
+
+(defun elisp-tred--save-local-var (var)
+  "Save the value of buffer-local variable VAR in
+`elisp-tred--saved-local-vars'. If VAR does not have a buffer-local
+binding, then this function does nothing."
+  (when (local-variable-p var)
+    (unless (assoc var elisp-tred--saved-local-vars #'eq)
+     (push (cons var (symbol-value var))
+           elisp-tred--saved-local-vars))))
+
+(defun elisp-tred--restore-local-var (var)
+  "Restore the value of buffer-local variable VAR from
+`elisp-tred--saved-local-vars'. If VAR was not previously saved by
+calling `elisp-tred--save-local-var' on VAR, then this function does
+nothing."
+  (kill-local-variable var)
+  (when-let ((binding (assoc var elisp-tred--saved-local-vars)))
+    (let ((saved-value (cdr binding)))
+      (set (make-local-variable var) saved-value))))
 
 (defun elisp-tred--init ()
   (elisp-tred--treesit-init)
-  ;; Turn on `visual-line-mode'.
-  ;;
-  ;; Scrolling behaviour in `elisp-tred' without `visual-line-mode'
-  ;; enables is pretty unpleasant, because elisp-tred's overlays
-  ;; drastically change where the line breaks are located.
-  ;;
-  ;; Note: We save the user's original `visual-line-mode' state in
-  ;; `elisp-tred--visual-line-mode-prev', so that we can restore it
-  ;; when `elisp-tred-mode' is disabled.
-  (setq elisp-tred--visual-line-mode-prev visual-line-mode)
-  (visual-line-mode 1))
+  ;; save user's buffer-local vars before modifying
+  (elisp-tred--save-local-var 'truncate-lines)
+  (elisp-tred--save-local-var 'truncate-partial-width-windows)
+  ;; disable line-wrapping, because it makes
+  ;; reading and navigating the tree more difficult
+  (setq-local truncate-lines t)
+  (setq-local truncate-partial-width-windows t))
 
 (defun elisp-tred--teardown ()
   "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
@@ -1637,9 +1658,9 @@ and restore `visual-line-mode' to its original value before enabling
 `elisp-tred-mode'."
   (elisp-tred--remove-all-overlays-in-buffer)
   (elisp-tred--treesit-teardown)
-  ;; restore the user's original `visual-line-mode' state.
-  (unless elisp-tred--visual-line-mode-prev
-    (visual-line-mode -1)))
+  ;; restore user's buffer-local vars
+  (elisp-tred--restore-local-var 'truncate-lines)
+  (elisp-tred--restore-local-var 'truncate-partial-width-windows))
 
 (define-minor-mode elisp-tred-mode
   "Display and edit elisp code as a tree."
