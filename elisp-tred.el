@@ -1400,22 +1400,50 @@ about the purpose of the guide flags."
                   elisp-tred--guide-with-handle
                 elisp-tred--guide-with-handle-last)))))
 
-(defun elisp-tred--create-tree-guide-overlay (node folded guide-flags)
-  "Insert the tree guide overlay at the beginning of the line
-for treesit node NODE. "
-  ;; Implementation note: I intentionally pass `start start' to
-  ;; `make-overlay' here to create a zero-length overlay. Zero-length
-  ;; overlays are allowed by Emacs and they work fine. The main reason
-  ;; I want to use zero-length overlays is that ;I believe they will
-  ;; perform better than overlays that span the full range from
-  ;; `treesit-node-start' to `treesit-node-end', because they reduce
-  ;; the number of overlaps between different overlays in the buffer.
-  (when-let* ((guide-string (elisp-tred--tree-guide-flags-to-string guide-flags))
-              (start (treesit-node-start node))
-              (overlay (make-overlay start start)))
+(defun elisp-tred--create-tree-guide-overlay-at (pos guide-string)
+  (let ((overlay (make-overlay pos pos)))
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'elisp-tred-folded folded)
-    (overlay-put overlay 'before-string (concat "\n" guide-string))))
+    (overlay-put overlay 'before-string (concat guide-string))))
+
+(defun elisp-tred--create-tree-guide-overlays-for-string (node folded guide-flags)
+  "Create tree guide overlays for a string, corresponding to
+treesit node NODE.
+
+We handle tree guides for strings specially, because strings can span
+multiple lines in the buffer (e.g. docstrings), whereas other treesit
+node types (e.g. symbol) always correspond to a single line in the
+buffer. For multi-line strings, we create separate tree guide overlays
+for each line, but we only show a handle for the first line."
+  (let* ((last-child-p (elisp-tred--last-child-p node))
+         (guide-string-line0 (elisp-tred--tree-guide-flags-to-string guide-flags))
+         (guide-length (length elisp-tred--guide))
+         ;; Guide string for string lines 2..N (if any).
+         ;; Replace the guide chars for the last level, in order to
+         ;; remove the handle.
+         (guide-string-rest (concat (substring guide-string-line0 0 (- guide-length))
+                                    (if last-child-p
+                                        elisp-tred--no-guide
+                                      elisp-tred--guide)))
+         (start (treesit-node-start node))
+         (end (treesit-node-end node))
+         (overlay (make-overlay start start)))
+    (save-excursion
+      (goto-char start)
+      (elisp-tred--create-tree-guide-overlay-at (point) (concat "\n" guide-string-line0))
+      (while (re-search-forward elisp-tred--newline-regex end t)
+        (goto-char (match-end 0))
+        (elisp-tred--create-tree-guide-overlay-at (point) guide-string-rest)))))
+
+(defun elisp-tred--create-tree-guide-overlays-for-node (node folded guide-flags)
+  "Insert the tree guide overlay at the beginning of the line
+for treesit node NODE. "
+  (when-let* ((node-type (treesit-node-type node))
+              (guide-string (elisp-tred--tree-guide-flags-to-string guide-flags))
+              (start (treesit-node-start node)))
+    (if (equal node-type "string")
+        (elisp-tred--create-tree-guide-overlays-for-string node folded guide-flags)
+     (elisp-tred--create-tree-guide-overlay-at start (concat "\n" guide-string)))))
 
 (defun elisp-tred--tree-guide-overlay-p (overlay)
   "Return non-nil if OVERLAY is a tree guide overlay, or nil
@@ -1447,7 +1475,7 @@ descendants.
 GUIDE-FLAGS is a list of booleans, one per ancestor node, that is used
 to construct the tree guide lines."
   (when (elisp-tred--tree-guide-p node)
-    (elisp-tred--create-tree-guide-overlay node folded guide-flags))
+    (elisp-tred--create-tree-guide-overlays-for-node node folded guide-flags))
   (unless folded
     (let* ((children (treesit-node-children node t)))
      (dolist (child children)
