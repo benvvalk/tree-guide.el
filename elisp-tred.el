@@ -1565,20 +1565,24 @@ is to ensure a consistent rendering of the tree based on code
 structure, rather than the author's personal preferences for
 whitespace/indentation."
     (remove-overlays nil nil 'category 'elisp-tred-guide)
-    (remove-overlays nil nil 'category 'elisp-tred-whitespace))
+    (remove-overlays nil nil 'category 'elisp-tred-whitespace)
+    (remove-overlays nil nil 'category 'elisp-tred-fold))
 
 (defun elisp-tred--remove-overlays (node)
   "Remove tree guide and whitespace overlays for treesit node NODE."
   (let ((start (treesit-node-start node))
         (end (treesit-node-end node)))
     (remove-overlays start end 'category 'elisp-tred-guide)
-    (remove-overlays start end 'category 'elisp-tred-whitespace)))
+    (remove-overlays start end 'category 'elisp-tred-whitespace)
+    (remove-overlays start end 'category 'elisp-tred-fold)))
 
 (defun elisp-tred--create-overlays (node folded)
   "Create tree guide and whitespace overlays for treesit node NODE."
   (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
         (start (treesit-node-start node))
         (end (treesit-node-end node)))
+    (when folded
+      (elisp-tred--create-fold-overlays-for-strings node))
     (elisp-tred--create-whitespace-overlays node folded)
     (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
@@ -1586,6 +1590,39 @@ whitespace/indentation."
 ;;
 ;; Implements collapsing/expanding of the current line using the TAB
 ;; key.
+
+(defun elisp-tred--create-fold-overlay (beg end)
+  "Create an overlay for a folded multi-line string, where lines 2..N
+are hidden and an ellipsis (`...') is shown instead."
+  (let ((overlay (make-overlay beg end)))
+    (overlay-put overlay 'category 'elisp-tred-fold)
+    (overlay-put overlay 'display "...")))
+
+(defun elisp-tred--create-fold-overlay-for-string (node)
+  "Create an overlay that `folds' the string corresponding to NODE,
+where NODE is a treesit node with type `string'.
+
+If NODE is a multi-line string, a new overlay is create that hides
+lines 2..N and replaces them with an ellipsis (`...'). If NODE is a
+single-line string, nothing needs to be done and therefore no overlay
+is created."
+  (let* ((start (treesit-node-start node))
+         (end (treesit-node-end node))
+         (overlay (make-overlay start start)))
+    (save-excursion
+      (goto-char start)
+      (when (re-search-forward elisp-tred--newline-regex end t)
+        (goto-char (match-beginning 0))
+        ;; use `(1- end)' so closing quotes (`"') are not hidden
+        (elisp-tred--create-fold-overlay (point) (1- end))))))
+
+(defun elisp-tred--create-fold-overlays-for-strings (node)
+  "Fold all multi-line strings under treesit node NODE, such that only
+the first line is shown, followed by an ellipsis (`...')."
+  (when (equal (treesit-node-type node) "string")
+    (elisp-tred--create-fold-overlay-for-string node))
+  (mapc #'elisp-tred--create-fold-overlays-for-strings
+      (treesit-node-children node t)))
 
 (defun elisp-tred--folded-p (node)
   "Return non-nil if treesit node NODE is currently folded."
