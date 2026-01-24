@@ -283,6 +283,13 @@ Emacs is restarted."
   (unless (treesit-ready-p 'elisptred)
     (user-error "Failed to load elisp-tred grammar (buffer too large?)"))
   (let ((parser (treesit-parser-create 'elisptred (current-buffer) t)))
+    ;; NOTE: For now, disable automatic treesit re-parsing on buffer
+    ;; changes, until I can address the slowness I am seeing with
+    ;; scrolling/paging in a static buffer (parsed once on load).  I
+    ;; believe the scrolling slowness is caused by using a large
+    ;; number of overlays, which I have heard Emacs does not handle
+    ;; well.
+    ;;
     ;; Set up a hook to call the `elisp-tred--on-treesit-reparse'
     ;; function whenever the `treesit' parse tree changes. This allows
     ;; us to keep the overlays for the tree guides in sync with the
@@ -302,9 +309,10 @@ Emacs is restarted."
     ;; addition, we call `elisp-tred--force-treesit-reparse' below to
     ;; perform the initial `treesit' parse after enabling
     ;; `elisp-tred-overlay-mode'.
-	(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
-    ;; (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
-    (elisp-tred--force-treesit-reparse)))
+	;;(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
+    ;;(add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
+    ;;(elisp-tred--force-treesit-reparse)
+    (elisp-tred--on-treesit-reparse nil nil)))
 
 (defun elisp-tred--buffer-name (treesit-node)
   "Return a buffer name for an elisp-tred buffer that is rooted at
