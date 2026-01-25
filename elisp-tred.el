@@ -129,113 +129,6 @@ POINT."
   (let* ((node (treesit-node-at (point))))
     (elisp-tred--get-toplevel-treesit-node node)))
 
-(defun elisp-tred--install-grammar (&optional suppress-warnings-p)
-  "Install the right tree-sitter grammar from GitHub.
-
-Here, the \"right tree-sitter grammar\" means that:
-
-(1) The grammar version matches `elisp-tred-grammar-version'.
-(2) The tree-sitter ABI version for the grammar is supported by the
-user's build of Emacs.
-
-The grammar version and ABI version are embedded in the git tags for
-the grammar releases (e.g. `0.0.1-abi-14').
-
-If SUPPRESS-WARNINGS-P is non-nil, then suppress all warnings during
-the internal call to `treesit-install-language-grammar'. I added this
-option because I encountered some cases where
-`treesit-install-language-grammar' was showing some really misleading
-warning messages that were likely to be confusing for the user. In
-particular, on Linux I observed that `tree-install-language-grammar'
-will show an ABI mismatch warning after successfully installing a
-compatible treesit grammar over top of an incompatible grammar
-(!). That happens because the grammar on disk is not reloaded until
-Emacs is restarted."
-  (let* ((library-abi-version-max (treesit-library-abi-version))
-         (git-tag (format "%s-abi-%s" elisp-tred-grammar-version library-abi-version-max)))
-    (push
-     `(elisptred . ("https://github.com/benvvalk/tree-sitter-elisptred.git" ,git-tag))
-     treesit-language-source-alist)
-    (if suppress-warnings-p
-        (with-suppressed-warnings (treesit-install-language-grammar 'elisptred))
-      (treesit-install-language-grammar 'elisptred))))
-
-(defun elisp-tred--treesit-init ()
-  (unless (treesit-available-p)
-    (user-error "Emacs was not compiled with tree-sitter support"))
-  ;; Note: If `treesit-language-available-p' is true, it
-  ;; means that both of the following are true:
-  ;;
-  ;; (1) Emacs found the shared library file for the grammar
-  ;; (e.g. `~/.emacs.d/tree-sitter/tree-sitter-elisptred.so' on
-  ;; Linux).
-  ;;
-  ;; (2) The tree-sitter ABI version of the shared library is
-  ;; compatible with the user's Emacs binary. (This is what is meant
-  ;; by "loadable" in the docstring for `treesit-language-available-p').
-  ;;
-  ;; Note 1: The range of tree-sitter ABI versions that are
-  ;; supported by Emacs is determined by the version of the
-  ;; tree-sitter library that Emacs was compiled with. You can get
-  ;; the minimum and maximum supported tree-sitter ABI versions by
-  ;; evaluating `(treesit-library-abi-version t)' and
-  ;; `(treesit-library-abi-version)', respectively.
-  ;;
-  ;; Note 2: Emacs does *not* "hot reload" the shared libraries for
-  ;; the grammar if they change on disk. Each grammar is loaded *once*
-  ;; when it is first needed, and thereafter it cannot be unloaded or
-  ;; reloaded for the rest of Emacs' lifetime.  It makes testings and
-  ;; debugging tree-sitter grammars really awkward and error-prone.
-  (let* ((result (treesit-language-available-p 'elisptred t))
-         (error-p (not (car result)))
-         (error-type (cadr result))
-         (version-mismatch-p (eq error-type 'version-mismatch)))
-    (when error-p
-      (if (y-or-n-p "Install tree-sitter grammar for elisp-tred?")
-          (progn
-            ;; In the case of a `version-mismatch' error, I pass `t'
-            ;; for the optional SUPPRESS-WARNINGS-P argument because
-            ;; it prints some really misleading warnings.  See the
-            ;; docstring of `elisp-tred--install-grammar' for further
-            ;; explanation.
-            (elisp-tred--install-grammar version-mismatch-p)
-            (when version-mismatch-p
-              (user-error "Note: Elisp-tred will not work until you restart Emacs (to reload the grammar).")))
-        (user-error "Elisp-tred aborted"))))
-  (unless (treesit-ready-p 'elisptred)
-    (user-error "Failed to load elisp-tred grammar (buffer too large?)"))
-  (let ((parser (treesit-parser-create 'elisptred (current-buffer) t)))
-    ;; NOTE: For now, disable automatic treesit re-parsing on buffer
-    ;; changes, until I can address the slowness I am seeing with
-    ;; scrolling/paging in a static buffer (parsed once on load).  I
-    ;; believe the scrolling slowness is caused by using a large
-    ;; number of overlays, which I have heard Emacs does not handle
-    ;; well.
-    ;;
-    ;; Set up a hook to call the `elisp-tred--on-treesit-reparse'
-    ;; function whenever the `treesit' parse tree changes. This allows
-    ;; us to keep the overlays for the tree guides in sync with the
-    ;; structure of the elisp code.
-    ;;
-    ;; Note: At first, I expected that `treesit' would automatically
-    ;; reparse the buffer and call `elisp-tred--on-treesit-reparse'
-    ;; whenever the user edited text in the buffer. However, `treesit'
-    ;; does not work this way! Instead, `treesit' lazily reparses the
-    ;; buffer when any elisp code makes an API call that accesses the
-    ;; `treesit' parse tree (e.g. by calling
-    ;; `treesit-parser-root-node').
-    ;;
-    ;; Since we need to trigger the `treesit' reparse ourselves by
-    ;; making `treesit' API calls, we set up another hook for
-    ;; `pre-redisplay-functions' to do that on a repeating basis.  In
-    ;; addition, we call `elisp-tred--force-treesit-reparse' below to
-    ;; perform the initial `treesit' parse after enabling
-    ;; `elisp-tred-overlay-mode'.
-	;;(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
-    ;;(add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
-    ;;(elisp-tred--force-treesit-reparse)
-    (elisp-tred--on-treesit-reparse nil nil)))
-
 (defun elisp-tred--buffer-name (treesit-node)
   "Return a buffer name for an elisp-tred buffer that is rooted at
 TREESIT-NODE."
@@ -1182,6 +1075,113 @@ to the current cursor position in the elisp-tred buffer."
 ;;; New overlay-based implementation
 
 ;;;; Tree-sitter
+
+(defun elisp-tred--install-grammar (&optional suppress-warnings-p)
+  "Install the right tree-sitter grammar from GitHub.
+
+Here, the \"right tree-sitter grammar\" means that:
+
+(1) The grammar version matches `elisp-tred-grammar-version'.
+(2) The tree-sitter ABI version for the grammar is supported by the
+user's build of Emacs.
+
+The grammar version and ABI version are embedded in the git tags for
+the grammar releases (e.g. `0.0.1-abi-14').
+
+If SUPPRESS-WARNINGS-P is non-nil, then suppress all warnings during
+the internal call to `treesit-install-language-grammar'. I added this
+option because I encountered some cases where
+`treesit-install-language-grammar' was showing some really misleading
+warning messages that were likely to be confusing for the user. In
+particular, on Linux I observed that `tree-install-language-grammar'
+will show an ABI mismatch warning after successfully installing a
+compatible treesit grammar over top of an incompatible grammar
+(!). That happens because the grammar on disk is not reloaded until
+Emacs is restarted."
+  (let* ((library-abi-version-max (treesit-library-abi-version))
+         (git-tag (format "%s-abi-%s" elisp-tred-grammar-version library-abi-version-max)))
+    (push
+     `(elisptred . ("https://github.com/benvvalk/tree-sitter-elisptred.git" ,git-tag))
+     treesit-language-source-alist)
+    (if suppress-warnings-p
+        (with-suppressed-warnings (treesit-install-language-grammar 'elisptred))
+      (treesit-install-language-grammar 'elisptred))))
+
+(defun elisp-tred--treesit-init ()
+  (unless (treesit-available-p)
+    (user-error "Emacs was not compiled with tree-sitter support"))
+  ;; Note: If `treesit-language-available-p' is true, it
+  ;; means that both of the following are true:
+  ;;
+  ;; (1) Emacs found the shared library file for the grammar
+  ;; (e.g. `~/.emacs.d/tree-sitter/tree-sitter-elisptred.so' on
+  ;; Linux).
+  ;;
+  ;; (2) The tree-sitter ABI version of the shared library is
+  ;; compatible with the user's Emacs binary. (This is what is meant
+  ;; by "loadable" in the docstring for `treesit-language-available-p').
+  ;;
+  ;; Note 1: The range of tree-sitter ABI versions that are
+  ;; supported by Emacs is determined by the version of the
+  ;; tree-sitter library that Emacs was compiled with. You can get
+  ;; the minimum and maximum supported tree-sitter ABI versions by
+  ;; evaluating `(treesit-library-abi-version t)' and
+  ;; `(treesit-library-abi-version)', respectively.
+  ;;
+  ;; Note 2: Emacs does *not* "hot reload" the shared libraries for
+  ;; the grammar if they change on disk. Each grammar is loaded *once*
+  ;; when it is first needed, and thereafter it cannot be unloaded or
+  ;; reloaded for the rest of Emacs' lifetime.  It makes testings and
+  ;; debugging tree-sitter grammars really awkward and error-prone.
+  (let* ((result (treesit-language-available-p 'elisptred t))
+         (error-p (not (car result)))
+         (error-type (cadr result))
+         (version-mismatch-p (eq error-type 'version-mismatch)))
+    (when error-p
+      (if (y-or-n-p "Install tree-sitter grammar for elisp-tred?")
+          (progn
+            ;; In the case of a `version-mismatch' error, I pass `t'
+            ;; for the optional SUPPRESS-WARNINGS-P argument because
+            ;; it prints some really misleading warnings.  See the
+            ;; docstring of `elisp-tred--install-grammar' for further
+            ;; explanation.
+            (elisp-tred--install-grammar version-mismatch-p)
+            (when version-mismatch-p
+              (user-error "Note: Elisp-tred will not work until you restart Emacs (to reload the grammar).")))
+        (user-error "Elisp-tred aborted"))))
+  (unless (treesit-ready-p 'elisptred)
+    (user-error "Failed to load elisp-tred grammar (buffer too large?)"))
+  (let ((parser (treesit-parser-create 'elisptred (current-buffer) t)))
+    ;; NOTE: For now, disable automatic treesit re-parsing on buffer
+    ;; changes, until I can address the slowness I am seeing with
+    ;; scrolling/paging in a static buffer (parsed once on load).  I
+    ;; believe the scrolling slowness is caused by using a large
+    ;; number of overlays, which I have heard Emacs does not handle
+    ;; well.
+    ;;
+    ;; Set up a hook to call the `elisp-tred--on-treesit-reparse'
+    ;; function whenever the `treesit' parse tree changes. This allows
+    ;; us to keep the overlays for the tree guides in sync with the
+    ;; structure of the elisp code.
+    ;;
+    ;; Note: At first, I expected that `treesit' would automatically
+    ;; reparse the buffer and call `elisp-tred--on-treesit-reparse'
+    ;; whenever the user edited text in the buffer. However, `treesit'
+    ;; does not work this way! Instead, `treesit' lazily reparses the
+    ;; buffer when any elisp code makes an API call that accesses the
+    ;; `treesit' parse tree (e.g. by calling
+    ;; `treesit-parser-root-node').
+    ;;
+    ;; Since we need to trigger the `treesit' reparse ourselves by
+    ;; making `treesit' API calls, we set up another hook for
+    ;; `pre-redisplay-functions' to do that on a repeating basis.  In
+    ;; addition, we call `elisp-tred--force-treesit-reparse' below to
+    ;; perform the initial `treesit' parse after enabling
+    ;; `elisp-tred-overlay-mode'.
+	;;(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
+    ;;(add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
+    ;;(elisp-tred--force-treesit-reparse)
+    (elisp-tred--on-treesit-reparse nil nil)))
 
 (defun elisp-tred--force-treesit-reparse ()
     "Force `treesit' to reparse the buffer.
