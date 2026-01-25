@@ -18,7 +18,7 @@ in a single line, which can be very long indeed.")
   "\\(\r\n\\|\n\\|\r\\)"
   "Regular expression that matches newlines on Linux, Mac, and Windows.")
 
-;;;; Tree-sitter
+;;; Tree-sitter
 
 (defun elisp-tred--install-grammar (&optional suppress-warnings-p)
   "Install the right tree-sitter grammar from GitHub.
@@ -190,7 +190,7 @@ treesit node for the list."
     (beginning-of-visual-line)
     (elisp-tred--treesit-node-at (point))))
 
-;;;; Tree guide rendering
+;;; Tree guide rendering
 
 (defcustom elisp-tred-tree-guide-face 'shadow
   "The face for tree guide characters.")
@@ -357,7 +357,7 @@ to construct the tree guide lines."
               (guide-flags (append guide-flags (list guide-flag))))
          (elisp-tred--create-tree-guide-overlays child folded guide-flags))))))
 
-;;;; Whitespace rendering
+;;; Whitespace rendering
 ;;
 ;; We use overlays to both hide real whitespace and to add virtual
 ;; whitespace (e.g. newlines), to ensure that the tree is always
@@ -417,7 +417,7 @@ fully invisible."
               (overlay-put overlay 'display replacement)
             (overlay-put overlay 'invisible t)))))))
 
-;;;; High-level overlay functions
+;;; High-level overlay functions
 ;;
 ;; High-level functions for creating/removing elisp-tred overlays
 ;; (tree guides and whitespace).
@@ -452,7 +452,7 @@ whitespace/indentation."
     (elisp-tred--create-whitespace-overlays node folded)
     (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
-;;;; Folding
+;;; Folding
 ;;
 ;; Implements collapsing/expanding of the current line using the TAB
 ;; key.
@@ -512,7 +512,7 @@ the first line is shown, followed by an ellipsis (`...')."
     (let ((folded (elisp-tred--folded-p node)))
       (elisp-tred--set-node-folded node (not folded)))))
 
-;;;; Evil integration
+;;; Evil integration
 ;;
 ;; Remap j/k and up/down arrows to move by visual lines rather than
 ;; real newlines. In order to render the elisp syntax tree in a
@@ -543,12 +543,12 @@ the first line is shown, followed by an ellipsis (`...')."
       (kbd "j") #'evil-next-visual-line
       (kbd "k") #'evil-previous-visual-line)))
 
-;;;; Keymap
+;;; Keymap
 
 (defvar-keymap elisp-tred-mode-map
   "TAB" #'elisp-tred-toggle-current-line-folded)
 
-;;;; Minor mode definition
+;;; Minor mode definition
 
 (defvar-local elisp-tred--saved-local-vars nil
   "The previous buffer-local values of any variables that were
