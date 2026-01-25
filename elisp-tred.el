@@ -178,6 +178,30 @@ all treesit-related hook functions."
       (remove-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay t)
       (treesit-parser-delete parser))))
 
+(defun elisp-tred--get-toplevel-node-with-same-start-pos (node)
+  (let* ((start-pos (treesit-node-start node))
+         (parent-node (treesit-node-parent node))
+         (parent-type (treesit-node-type parent-node))
+         (parent-pos (treesit-node-start parent-node)))
+    (if (or (/= parent-pos start-pos)
+            (equal parent-type "source_file"))
+        node
+      (elisp-tred--get-toplevel-node-with-same-start-pos parent-node))))
+
+(defun elisp-tred--treesit-node-at (pos)
+  "Return the node closest to root that starts exactly at POS.
+
+This function is similar to `treesit-node-at', except that in the case
+where there are multiple treesit nodes that start at POS, we return
+the node that is closest to the root, rather than the leaf node. The
+other difference from `treesit-node-at' is that we only return a node if
+its starting position exactly matches POS, whereas `treesit-node-at'
+will return a nearby leaf node if there isn't an exact match."
+  (let* ((node (treesit-node-at pos))
+         (node-pos (treesit-node-start node)))
+    (when (eql node-pos pos)
+      (elisp-tred--get-toplevel-node-with-same-start-pos node))))
+
 (defun elisp-tred--node-for-current-line ()
   "Return the largest treesit node for the current line.
 
