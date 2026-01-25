@@ -141,45 +141,6 @@ TREESIT-NODE."
       (format "*elisp-tred: %s*" function-name)
 	(format "*elisp-tred*")))
 
-(defun elisp-tred ()
-  "Open elisp-tred buffer and show tree for current top-level elisp
-form surrounding POINT."
-  (interactive)
-  (elisp-tred--treesit-init)
-  (when-let* ((root-node (treesit-buffer-root-node 'elisptred))
-              (bufname (elisp-tred--buffer-name root-node))
-              (tree-buffer (get-buffer-create bufname))
-              (pos (point)))
-    ;; Force immediate syntax highlighting of the entire elisp source
-    ;; code buffer, using Emacs' built-in syntax highlighting.  This
-    ;; ensures that the code used to label the tree nodes is always
-    ;; syntax-highlighted. By default, Emacs does "just-in-time"
-    ;; syntax highlighting of elisp code, which means that code only
-    ;; gets syntax-highlighted when it becomes visible to the user
-    ;; (i.e. when the user scrolls to the code in a window). If we
-    ;; don't force ahead-of-time syntax highlighting, the lack of
-    ;; syntax highlighting becomes particularly noticeable if we are
-    ;; using `M-.'  (`xref-find-definition') to jump between function
-    ;; definitions across buffers.
-    (when jit-lock-mode
-      (message "elisp-tred: syntax highlighting...")
-      (let ((result (benchmark-run (jit-lock-fontify-now (point-min) (point-max)))))
-        (message "elisp-tred: syntax highlighting...done (%.3f sec)" (car result))))
-    (with-current-buffer tree-buffer
-      (elisp-tred-mode)
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (message "elisp-tred: creating root widget...")
-		(let ((result (benchmark-run (widget-create (elisp-tred--get-tree-widget root-node)))))
-          (message "elisp-tred: creating root widget...done (%.3f sec)" (car result)))
-        (message "elisp-tred: building tree...")
-        (let ((result (benchmark-run (elisp-tred--goto-source-code-pos-in-tree pos))))
-          (message "elisp-tred: building tree...done (%.3f sec)" (car result)))))
-    ;; Default to displaying the tree buffer in the same window as the
-    ;; elisp source buffer, unless the user overrides it in their
-    ;; `display-buffer-alist'.
-    (display-buffer tree-buffer '(display-buffer-same-window))))
-
 (defun elisp-tred--node-widget-for-current-line ()
   (save-excursion
     (beginning-of-line)
