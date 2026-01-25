@@ -24,7 +24,6 @@
 (require 'seq)
 (require 'treesit)
 (require 'tree-widget)
-(require 'xref)
 
 (defconst elisp-tred-grammar-version "0.0.1"
   "The version of the `tree-sitter-elisptred' grammar that is intended
@@ -41,83 +40,6 @@ in a single line, which can be very long indeed.")
 
 (defvar-local elisp-tred--current-node-overlay nil
   "Overlay used to highlight the tree node label on the current line.")
-
-;;; `xref' backend
-;;
-;; The code in this section implements the `xref' backend for
-;; `elisp-tred'. This allows users to call `xref-find-definitions' on
-;; a symbol in the `elisp-tred' tree, to jump to the definition of the
-;; lisp function/variable/macro under the cursor.
-;;
-;; `M-.' (`xref-find-definitions') in `elisp-tred' behaves very
-;; similarly to `M-.' in `emacs-lisp-mode' buffers, except that the
-;; target function/variable/macro is displayed in a new `elisp-tred'
-;; buffer, rather than jumping directly to the elisp source code
-;; file. This allows the user to keep browsing the code as a tree,
-;; when jumping between elisp functions. One notable exception
-;; behaviour is that jumping to the definition of a C function will
-;; jump to the C source code file, because `elisp-tred' only knows how
-;; to create interactive trees for elisp code. (Perhaps someday it
-;; will support C code as well.)
-
-(defun elisp-tred--is-c-source-xref-p (xref)
-  "Return t if XREF item points to a C source definition.
-The elisp xref backend marks C source definitions with file paths
-starting with \"src/\" (e.g., \"src/data.c\")."
-  (when-let* ((location (xref-item-location xref)))
-    ;; Check if this is an elisp-specific location (has a file field)
-    (and (xref-elisp-location-p location)
-         (when-let* ((file (xref-elisp-location-file location)))
-           (string-prefix-p "src/" file)))))
-
-(defun elisp-tred--xref-show-definition (xref)
-  "Show a single xref definition by opening it in an elisp-tred buffer.
-
-XREF is an xref item to display. For C source definitions, uses the
-default xref behavior. For elisp sources, opens the definition in an
-elisp-tred buffer."
-  (if (elisp-tred--is-c-source-xref-p xref)
-      ;; C source - use default xref behavior
-      (xref-pop-to-location xref)
-    ;; Elisp source - open in elisp-tred
-    (xref-push-marker-stack)
-    (let* ((location (xref-item-location xref))
-           (marker (xref-location-marker location))
-           (buffer (marker-buffer marker))
-           (pos (marker-position marker)))
-      (with-current-buffer buffer
-        (goto-char pos)
-        (elisp-tred)))))
-
-(defun elisp-tred--xref-show-definitions (fetcher alist)
-  "Show xref definitions by opening them in elisp-tred buffers.
-
-This is a custom implementation of `xref-show-definitions-function'
-that opens the target definition in an elisp-tred buffer instead of
-jumping directly to the source file.
-
-FETCHER is a function that returns a list of xref items.
-ALIST is an association list of additional parameters."
-  (let* ((xrefs (funcall fetcher))
-         (xref-count (length xrefs)))
-    (cond
-     ;; No definitions found
-     ((= xref-count 0)
-      (user-error "No definitions found"))
-
-     ;; Single definition - open it in elisp-tred
-     ((= xref-count 1)
-      (elisp-tred--xref-show-definition (car xrefs)))
-
-     ;; Multiple definitions - let user choose, then open in elisp-tred
-     (t
-      (let* ((collection (mapcar
-                         (lambda (xref)
-                           (cons (xref-item-summary xref) xref))
-                         xrefs))
-             (choice (completing-read "Choose definition: " collection nil t))
-             (xref (cdr (assoc choice collection))))
-        (elisp-tred--xref-show-definition xref))))))
 
 ;;; Custom "widgets"
 ;;
