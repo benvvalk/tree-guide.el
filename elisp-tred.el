@@ -441,41 +441,6 @@ fully invisible."
               (overlay-put overlay 'display replacement)
             (overlay-put overlay 'invisible t)))))))
 
-;;; High-level overlay functions
-;;
-;; High-level functions for creating/removing elisp-tred overlays
-;; (tree guides and whitespace).
-
-(defun elisp-tred--remove-all-overlays-in-buffer ()
-  "Remove all overlays created by elisp-tred.
-
-Elisp-tred creates overlays to: (1) show the tree guides as virtual
-text, and (2) to hide whitespace characters. The purpose of the latter
-is to ensure a consistent rendering of the tree based on code
-structure, rather than the author's personal preferences for
-whitespace/indentation."
-    (remove-overlays nil nil 'category 'elisp-tred-guide)
-    (remove-overlays nil nil 'category 'elisp-tred-whitespace)
-    (remove-overlays nil nil 'category 'elisp-tred-fold))
-
-(defun elisp-tred--remove-overlays (node)
-  "Remove tree guide and whitespace overlays for treesit node NODE."
-  (let ((start (treesit-node-start node))
-        (end (treesit-node-end node)))
-    (remove-overlays start end 'category 'elisp-tred-guide)
-    (remove-overlays start end 'category 'elisp-tred-whitespace)
-    (remove-overlays start end 'category 'elisp-tred-fold)))
-
-(defun elisp-tred--create-overlays (node folded)
-  "Create tree guide and whitespace overlays for treesit node NODE."
-  (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
-        (start (treesit-node-start node))
-        (end (treesit-node-end node)))
-    (when folded
-      (elisp-tred--create-fold-overlays-for-strings node))
-    (elisp-tred--create-whitespace-overlays node folded)
-    (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
-
 ;;; Folding
 ;;
 ;; Implements collapsing/expanding of the current line using the TAB
@@ -535,6 +500,41 @@ the first line is shown, followed by an ellipsis (`...')."
   (when-let* ((node (elisp-tred--node-for-current-line)))
     (let ((folded (elisp-tred--folded-p node)))
       (elisp-tred--set-node-folded node (not folded)))))
+
+;;; High-level overlay functions
+;;
+;; High-level functions for creating/removing elisp-tred overlays
+;; (tree guides and whitespace).
+
+(defun elisp-tred--remove-all-overlays-in-buffer ()
+  "Remove all overlays created by elisp-tred.
+
+Elisp-tred creates overlays to: (1) show the tree guides as virtual
+text, and (2) to hide whitespace characters. The purpose of the latter
+is to ensure a consistent rendering of the tree based on code
+structure, rather than the author's personal preferences for
+whitespace/indentation."
+    (remove-overlays nil nil 'category 'elisp-tred-guide)
+    (remove-overlays nil nil 'category 'elisp-tred-whitespace)
+    (remove-overlays nil nil 'category 'elisp-tred-fold))
+
+(defun elisp-tred--remove-overlays (node)
+  "Remove tree guide and whitespace overlays for treesit node NODE."
+  (let ((start (treesit-node-start node))
+        (end (treesit-node-end node)))
+    (remove-overlays start end 'category 'elisp-tred-guide)
+    (remove-overlays start end 'category 'elisp-tred-whitespace)
+    (remove-overlays start end 'category 'elisp-tred-fold)))
+
+(defun elisp-tred--create-overlays (node folded)
+  "Create tree guide and whitespace overlays for treesit node NODE."
+  (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
+        (start (treesit-node-start node))
+        (end (treesit-node-end node)))
+    (when folded
+      (elisp-tred--create-fold-overlays-for-strings node))
+    (elisp-tred--create-whitespace-overlays node folded)
+    (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
 ;;; Evil integration
 ;;
