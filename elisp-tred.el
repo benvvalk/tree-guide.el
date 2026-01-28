@@ -298,7 +298,7 @@ about the purpose of the guide flags."
                   elisp-tred--guide-with-handle
                 elisp-tred--guide-with-handle-last)))))
 
-(defun elisp-tred--create-tree-guide-overlay-at (pos guide-string)
+(defun elisp-tred--create-tree-guide-overlay-at (pos folded guide-string)
   (let ((overlay (make-overlay pos pos)))
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'elisp-tred-folded folded)
@@ -328,10 +328,10 @@ for each line, but we only show a handle for the first line."
          (overlay (make-overlay start start)))
     (save-excursion
       (goto-char start)
-      (elisp-tred--create-tree-guide-overlay-at (point) (concat "\n" guide-string-line0))
+      (elisp-tred--create-tree-guide-overlay-at (point) folded (concat "\n" guide-string-line0))
       (while (re-search-forward elisp-tred--newline-regex end t)
         (goto-char (match-end 0))
-        (elisp-tred--create-tree-guide-overlay-at (point) guide-string-rest)))))
+        (elisp-tred--create-tree-guide-overlay-at (point) folded guide-string-rest)))))
 
 (defun elisp-tred--create-tree-guide-overlays-for-node (node folded guide-flags)
   "Insert the tree guide overlay at the beginning of the line
@@ -341,7 +341,7 @@ for treesit node NODE. "
               (start (treesit-node-start node)))
     (if (equal node-type "string")
         (elisp-tred--create-tree-guide-overlays-for-string node folded guide-flags)
-     (elisp-tred--create-tree-guide-overlay-at start (concat "\n" guide-string)))))
+     (elisp-tred--create-tree-guide-overlay-at start folded (concat "\n" guide-string)))))
 
 (defun elisp-tred--tree-guide-overlay-p (overlay)
   "Return non-nil if OVERLAY is a tree guide overlay, or nil
