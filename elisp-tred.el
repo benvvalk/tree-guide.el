@@ -363,7 +363,7 @@ treesit node NODE, or `nil' otherwise."
       ;; vector), so that it is shown on the same line as its opening
       ;; paren/bracket.
       (and (elisp-tred--first-child-p node)
-           (not (elisp-tred--sequence-p node)))
+           (eq (treesit-node-child-count node t) 0))
     t))
 
 (defun elisp-tred--create-tree-guide-overlays (node folded &optional guide-flags)
