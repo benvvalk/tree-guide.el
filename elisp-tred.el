@@ -1,3 +1,6 @@
+;;; ...  -*- lexical-binding: t -*-
+
+(require 'cl-lib)
 (require 'seq)
 (require 'treesit)
 
@@ -17,6 +20,11 @@ in a single line, which can be very long indeed.")
 (defvar elisp-tred--newline-regex
   "\\(\r\n\\|\n\\|\r\\)"
   "Regular expression that matches newlines on Linux, Mac, and Windows.")
+
+(defvar elisp-tred--whitespace-regex
+  "[ \t\n\r\f]+"
+  "Regular expression for a sequence of one or more whitespace
+characters, including tabs, newlines, and page breaks.")
 
 ;;; Tree-sitter
 
@@ -214,6 +222,109 @@ treesit node for the list."
     (beginning-of-visual-line)
     (elisp-tred--treesit-node-at (point))))
 
+(defun elisp-tred--treesit-traversal (node visitor-func)
+  "For the buffer region corresponding to treesit node NODE,
+invoke VISITOR-FUNC on consecutive subregions that correspond to:
+
+(1) The opening chars of a treesit NODE, e.g. the opening paren
+`(' of the list `(one two)'.
+(2) The whitespace separating adjacent parent/child/sibling treesit
+nodes, e.g. the space ` ' between `one' and `two' in the list `(one
+two)'.
+(3) The closing chars of a treesit NODE, e.g. the closing paren
+`)' of the list `(one two)'.
+(4) The full range of chars for a treesit NODE, in the case that NODE
+is a leaf node, e.g. the symbol `one' in the list `(one two)'.
+
+VISITOR-FUNC is invoked with the following arguments:
+
+* REGION-TYPE: one of `opening-chars', `whitespace', `closing-chars',
+               or `all-chars'.
+* NODE: target treesit NODE (nil when REGION-TYPE is `whitespace')
+* BEG: start of the buffer region
+* END: end of the buffer region
+
+If the return value of VISITOR-FUNC is nil, the traversal will be
+halted early. Otherwise, the traversal continues."
+  (catch 'done
+    (if-let ((children (treesit-node-children node t)))
+       (progn
+         ;; Visit opening chars for parent, whitespace between parent
+         ;; and first child (if any), and first child
+         (let* ((first-child (car children))
+                (gap-start (treesit-node-start node))
+                (gap-end (treesit-node-start first-child)))
+           (when (< gap-start gap-end)
+             (save-excursion
+               (goto-char gap-start)
+               (if (re-search-forward elisp-tred--whitespace-regex gap-end t)
+                   (let ((whitespace-start (match-beginning 0))
+                         (whitespace-end (match-end 0)))
+                     ;; Whitepace should extend to start of first child.
+                     (cl-assert (eq whitespace-end gap-end))
+                     (when (< gap-start whitespace-start)
+				       (unless (funcall visitor-func 'opening-chars node gap-start whitespace-start)
+                         (throw 'done nil)))
+                     (when (< whitespace-start gap-end)
+                       (unless (funcall visitor-func 'whitespace nil whitepace-start gap-end)
+                         (throw 'done nil))))
+                 ;; else: no whitespace found between parent and first child
+                 (unless (funcall visitor-func 'opening-chars node gap-start gap-end)
+                   (throw 'done nil)))))
+           ;; recurse
+           (elisp-tred--treesit-traversal first-child visitor-func))
+
+         ;; Visit whitespace before children 2..N
+         (let ((prev-child (car children)))
+           (dolist (curr-child (cdr children))
+             (let ((gap-start (treesit-node-end prev-child))
+                   (gap-end (treesit-node-start curr-child)))
+          	   (when (< gap-start gap-end)
+                 ;; Gaps between siblings should only contain whitespace chars.
+                 (cl-assert (elisp-tred--whitespace-p gap-start gap-end))
+                 (unless (funcall visitor-func 'whitespace nil gap-start gap-end)
+                   (throw 'done nil))))
+		     ;; recurse
+             (elisp-tred--treesit-traversal curr-child visitor-func)
+             ;; set up for next loop iteration
+             (setq prev-child curr-child)))
+
+         ;; Visit whitespace between last child and parent (if any),
+         ;; and closing chars of parent.
+         (let* ((last-child (car (last children)))
+                (gap-start (treesit-node-end last-child))
+                (gap-end (treesit-node-end node)))
+           (when (< gap-start gap-end)
+             (save-excursion
+               (goto-char gap-start)
+               (if (re-search-forward elisp-tred--whitespace-regex gap-end t)
+                   (let ((whitespace-start (match-beginning 0))
+                         (whitespace-end (match-end 0)))
+                     ;; Whitespace should start immediately after last child.
+                     (cl-assert (eq whitespace-start gap-start))
+				     (when (< gap-start whitespace-end)
+                       (unless (funcall visitor-func 'whitespace nil gap-start whitespace-end)
+                         (throw 'done nil)))
+                     (when (< whitespace-end gap-end)
+                       (unless (funcall visitor-func 'closing-chars node whitespace-end gap-end)
+                         (throw 'done nil))))
+                 ;; else: no whitespace found between last child and parent
+                 (unless (funcall visitor-func 'closing-chars node gap-start gap-end)
+                   (throw 'done nil)))))))
+     ;; else: treesit node has no named children (leaf node)
+      (funcall visitor-func 'all-chars node (treesit-node-start node) (treesit-node-end node)))))
+
+(defun elisp-tred--treesit-traversal-test (node)
+  "The function I used to test and debug
+`elisp-tred--in-order-traversal'."
+  (cl-labels ((visitor-func (region-type node beg end)
+                (message "region (%s, %s), type = %s, node: %s"
+                         beg
+                         end
+                         (symbol-name region-type)
+                         (if node (treesit-node-type node) "nil"))))
+    (elisp-tred--treesit-traversal node #'visitor-func)))
+
 ;;; Tree guide rendering
 
 (defcustom elisp-tred-tree-guide-face 'shadow
@@ -388,6 +499,15 @@ to construct the tree guide lines."
 ;; rendered in a consistent manner with respect to the structure of
 ;; the code, rather than the user's personal choice of
 ;; whitespace/indentation.
+
+(defun elisp-tred--whitespace-p (beg end)
+  "Return non-nil if the buffer region between BEG and END
+contains only whitespace characters."
+  (save-excursion
+    (goto-char beg)
+    (when (re-search-forward elisp-tred--whitespace-regex end t)
+      (and (eq (match-beginning 0) beg)
+           (eq (match-end 0) end)))))
 
 (defun elisp-tred--create-whitespace-overlays (node folded)
   "Hide all non-significant whitespace using overlays.
