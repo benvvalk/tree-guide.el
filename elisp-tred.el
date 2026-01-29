@@ -8,7 +8,7 @@
   "The version of the `tree-sitter-elisptred' grammar that is intended
 to be used with this version elisp-tred.")
 
-(defvar-local elisp-tred-max-label-length 128
+(defvar-local elisp-tred-max-label-length 60
   "The maximum length of a tree node label. For the sake of
 performance, labels longer than this length will be truncated with an
 ellipsis (\"...\").
@@ -571,7 +571,16 @@ fully invisible."
 are hidden and an ellipsis (`...') is shown instead."
   (let ((overlay (make-overlay beg end)))
     (overlay-put overlay 'category 'elisp-tred-fold)
-    (overlay-put overlay 'display "...")))
+    (overlay-put overlay 'display "...")
+    overlay))
+
+(defun elisp-tred--first-newline-pos (node)
+  (let ((node-start (treesit-node-start node))
+        (node-end (treesit-node-end node)))
+    (save-excursion
+      (goto-char node-start)
+      (when (re-search-forward elisp-tred--newline-regex node-end t)
+        (match-beginning 0)))))
 
 (defun elisp-tred--create-fold-overlay-for-string (node)
   "Create an overlay that `folds' the string corresponding to NODE,
@@ -598,6 +607,95 @@ the first line is shown, followed by an ellipsis (`...')."
     (elisp-tred--create-fold-overlay-for-string node))
   (mapc #'elisp-tred--create-fold-overlays-for-strings
       (treesit-node-children node t)))
+
+(defun elisp-tred--fold-end-pos (node)
+  "Return the position the last character we are allowed to hide
+when folding treesit node NODE, plus one.
+
+In many cases, the last character we are allowed to hide is the
+character before `(treesit-node-end node)'.  However, is the case
+where NODE is the last child of its parent, we also need to include
+the closing characters of the parent node (e.g. the closing paren of a
+list), and so on recursively, up to the root of the treesit parse
+tree."
+  (if (elisp-tred--last-child-p node)
+      (elisp-tred--fold-end-pos (treesit-node-parent node))
+    (treesit-node-end node)))
+
+(defun elisp-tred--fold-visitor-create (root-node)
+  "Create and return a visitor function that we can use with
+`elisp-tred--treesit-traversal', that will fold the subtree rooted at
+treesit node NODE.
+
+NOTE: We need the extra level of indirection provided by this
+function-that-returns-a-function because
+`elisp-tred--treesit-traversal' does not provide invoke the visitor
+function with all of the information we need. In addition to the
+arguments provided by `elisp-tred--treesit-traversal', we also need to
+know the total number of visible characters we have visited so far
+(i.e. the working length), and the root node for the subtree that
+we are folding."
+  (let ((fold-end-pos (elisp-tred--fold-end-pos root-node))
+        (length 0))
+    (lambda (region-type node beg end)
+      (let ((node-type (treesit-node-type node))
+            (region-length (- end beg)))
+        (cond
+          ;; Special handling for whitespace.
+          ;; Collapse any contiguous sequence of whitespace chars to
+          ;; single space (" ").
+          ((eq region-type 'whitespace)
+           (if (>= length elisp-tred-max-label-length)
+               ;; Optimization: Return `nil' to halt further traversal.
+               (progn (elisp-tred--create-fold-overlay beg fold-end-pos) nil)
+             (elisp-tred--hide-whitespace-in-range beg end " ")
+             (setq length (1+ length))))
+          ;; Special handling for comments.
+          ;; Hide comments doesn't make sense to show them within folded nodes.
+          ((equal node-type "comment")
+           (unless (treesit-node-eq node root-node)
+             (elisp-tred--create-fold-overlay beg end)))
+          ;; Special handling for strings.
+          ;;
+          ;; Unlike other treesit nodes types (e.g. constants,
+          ;; symbols) that are only displayed if they fully fit within
+          ;; `elisp-tred-max-label-length', allow truncating the
+          ;; string if needed. This is especially helpful for reading
+          ;; the docstrings of folded function/variable/macro nodes.
+          ;;
+          ;; Exception: In the case that the user is folding the
+          ;; string node directly (i.e. the string is `root-node'), we
+          ;; truncate at the first newline rather than
+          ;; `elisp-tred-max-label-length', because that is more
+          ;; intuitive behaviour.
+          ((equal node-type "string")
+           (if (treesit-node-eq node root-node)
+               (elisp-tred--create-fold-overlay-for-string node)
+             (let* ((max-length (- elisp-tred-max-label-length length))
+                    (max-length-pos (+ beg max-length))
+                    (first-newline-pos (elisp-tred--first-newline-pos node)))
+               (if (or first-newline-pos (> region-length max-length))
+                   (let ((fold-start-pos (if first-newline-pos
+                                             (min first-newline-pos max-length-pos)
+                                           max-length-pos)))
+                     (elisp-tred--create-fold-overlay fold-start-pos fold-end-pos))
+                 ;; whole string fits under length limit
+                 (setq length (+ length region-length))))))
+          ;; Default behaviour for all other treesit node types:
+          ;; Append characters for `node' only if it fits within
+          ;; length limit. Otherwise hide the remainder of the treesit
+          ;; subtree and finish traversal.
+          (t (if (> (+ length region-length) elisp-tred-max-label-length)
+            ;; Optimization: Return `nil' to halt further traversal.
+            (progn (elisp-tred--create-fold-overlay beg fold-end-pos) nil)
+          (setq length (+ length region-length)))))))))
+
+(defun elisp-tred--create-fold-overlays (node)
+  "Fold the subtree rooted at treesit node NODE, by collapsing the
+elisp code to a single line, and truncating characters beyond the
+length limit specified by `elisp-tred-max-label-length'."
+  (let ((visitor-func (elisp-tred--fold-visitor-create node)))
+    (elisp-tred--treesit-traversal node visitor-func)))
 
 (defun elisp-tred--folded-p (node)
   "Return non-nil if treesit node NODE is currently folded."
@@ -641,7 +739,7 @@ whitespace/indentation."
 (defun elisp-tred--remove-overlays (node)
   "Remove tree guide and whitespace overlays for treesit node NODE."
   (let ((start (treesit-node-start node))
-        (end (treesit-node-end node)))
+        (end (elisp-tred--fold-end-pos node)))
     (remove-overlays start end 'category 'elisp-tred-guide)
     (remove-overlays start end 'category 'elisp-tred-whitespace)
     (remove-overlays start end 'category 'elisp-tred-fold)))
@@ -651,9 +749,10 @@ whitespace/indentation."
   (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
         (start (treesit-node-start node))
         (end (treesit-node-end node)))
-    (when folded
-      (elisp-tred--create-fold-overlays-for-strings node))
-    (elisp-tred--create-whitespace-overlays node folded)
+    (if folded
+        ;; (elisp-tred--create-fold-overlays-for-strings node)
+        (elisp-tred--create-fold-overlays node)
+      (elisp-tred--create-whitespace-overlays node nil))
     (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
 ;;; Evil integration
