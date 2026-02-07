@@ -986,7 +986,7 @@ example, `elisp-tred-mode' always sets `truncate-lines' to `t' to
 disable line-wrapping, but the user might have set a different buffer
 local value for `truncate-lines', prior enabling `elisp-tred-mode'.")
 
-(defun elisp-tred--save-local-var (var)
+(defun elisp-tred--mode-local-var-save (var)
   "Save the value of buffer-local variable VAR in
 `elisp-tred--saved-local-vars'. If VAR does not have a buffer-local
 binding, then this function does nothing."
@@ -995,10 +995,10 @@ binding, then this function does nothing."
      (push (cons var (symbol-value var))
            elisp-tred--saved-local-vars))))
 
-(defun elisp-tred--restore-local-var (var)
+(defun elisp-tred--mode-local-var-restore (var)
   "Restore the value of buffer-local variable VAR from
 `elisp-tred--saved-local-vars'. If VAR was not previously saved by
-calling `elisp-tred--save-local-var' on VAR, then this function does
+calling `elisp-tred--mode-local-var-save' on VAR, then this function does
 nothing."
   (kill-local-variable var)
   (when-let ((binding (assoc var elisp-tred--saved-local-vars)))
@@ -1008,8 +1008,8 @@ nothing."
 (defun elisp-tred--mode-init ()
   (elisp-tred--treesit-init)
   ;; save user's buffer-local vars before modifying
-  (elisp-tred--save-local-var 'truncate-lines)
-  (elisp-tred--save-local-var 'truncate-partial-width-windows)
+  (elisp-tred--mode-local-var-save 'truncate-lines)
+  (elisp-tred--mode-local-var-save 'truncate-partial-width-windows)
   ;; disable line-wrapping, because it makes
   ;; reading and navigating the tree more difficult
   (setq-local truncate-lines t)
@@ -1022,8 +1022,8 @@ and restore `visual-line-mode' to its original value before enabling
   (elisp-tred--remove-all-overlays-in-buffer)
   (elisp-tred--treesit-teardown)
   ;; restore user's buffer-local vars
-  (elisp-tred--restore-local-var 'truncate-lines)
-  (elisp-tred--restore-local-var 'truncate-partial-width-windows))
+  (elisp-tred--mode-local-var-restore 'truncate-lines)
+  (elisp-tred--mode-local-var-restore 'truncate-partial-width-windows))
 
 (define-minor-mode elisp-tred-mode
   "Display and edit elisp code as a tree."
