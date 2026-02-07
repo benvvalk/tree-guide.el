@@ -1005,7 +1005,7 @@ nothing."
     (let ((saved-value (cdr binding)))
       (set (make-local-variable var) saved-value))))
 
-(defun elisp-tred--init ()
+(defun elisp-tred--mode-init ()
   (elisp-tred--treesit-init)
   ;; save user's buffer-local vars before modifying
   (elisp-tred--save-local-var 'truncate-lines)
@@ -1015,7 +1015,7 @@ nothing."
   (setq-local truncate-lines t)
   (setq-local truncate-partial-width-windows t))
 
-(defun elisp-tred--teardown ()
+(defun elisp-tred--mode-teardown ()
   "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
 and restore `visual-line-mode' to its original value before enabling
 `elisp-tred-mode'."
@@ -1029,7 +1029,7 @@ and restore `visual-line-mode' to its original value before enabling
   "Display and edit elisp code as a tree."
   :lighter " Tred"
   (if elisp-tred-mode
-      (elisp-tred--init)
-    (elisp-tred--teardown)))
+      (elisp-tred--mode-init)
+    (elisp-tred--mode-teardown)))
 
 (provide 'elisp-tred)
