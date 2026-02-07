@@ -8,7 +8,7 @@
   "The version of the `tree-sitter-elisptred' grammar that is intended
 to be used with this version elisp-tred.")
 
-(defvar-local elisp-tred-max-label-length 60
+(defvar-local elisp-tred-max-label-length 80
   "The maximum length of a tree node label. For the sake of
 performance, labels longer than this length will be truncated with an
 ellipsis (\"...\").
