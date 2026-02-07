@@ -974,13 +974,13 @@ if possible."
 
 ;;; Minor mode definition
 
-(defvar-local elisp-tred--saved-local-vars nil
+(defvar-local elisp-tred--mode-local-vars-saved nil
   "The previous buffer-local values of any variables that were
 modified during intialization of `elisp-tred-mode'. The value is a
 list of cons cells, where the CAR of each cons cell is the variable
 name, and the CDR is the variable value.
 
-`elisp-tred--saved-local-vars' is restore the user's previous values
+`elisp-tred--mode-local-vars-saved' is restore the user's previous values
 for buffer-local variables when `elisp-tred-mode' is disabled. For
 example, `elisp-tred-mode' always sets `truncate-lines' to `t' to
 disable line-wrapping, but the user might have set a different buffer
@@ -988,20 +988,20 @@ local value for `truncate-lines', prior enabling `elisp-tred-mode'.")
 
 (defun elisp-tred--mode-local-var-save (var)
   "Save the value of buffer-local variable VAR in
-`elisp-tred--saved-local-vars'. If VAR does not have a buffer-local
+`elisp-tred--mode-local-vars-saved'. If VAR does not have a buffer-local
 binding, then this function does nothing."
   (when (local-variable-p var)
-    (unless (assoc var elisp-tred--saved-local-vars #'eq)
+    (unless (assoc var elisp-tred--mode-local-vars-saved #'eq)
      (push (cons var (symbol-value var))
-           elisp-tred--saved-local-vars))))
+           elisp-tred--mode-local-vars-saved))))
 
 (defun elisp-tred--mode-local-var-restore (var)
   "Restore the value of buffer-local variable VAR from
-`elisp-tred--saved-local-vars'. If VAR was not previously saved by
+`elisp-tred--mode-local-vars-saved'. If VAR was not previously saved by
 calling `elisp-tred--mode-local-var-save' on VAR, then this function does
 nothing."
   (kill-local-variable var)
-  (when-let ((binding (assoc var elisp-tred--saved-local-vars)))
+  (when-let ((binding (assoc var elisp-tred--mode-local-vars-saved)))
     (let ((saved-value (cdr binding)))
       (set (make-local-variable var) saved-value))))
 
