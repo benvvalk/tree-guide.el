@@ -492,6 +492,42 @@ to construct the tree guide lines."
               (guide-flags (append guide-flags (list guide-flag))))
          (elisp-tred--create-tree-guide-overlays child folded guide-flags))))))
 
+(defun elisp-tred--tree-guide-at-point-p ()
+  "Return non-nil if there is a tree guide overlay at point.
+
+The existence of a tree guide overlay at point means that we
+are at the beginning of a (visual) line."
+  (let ((overlays (overlays-in (point) (point))))
+    (seq-find (lambda (overlay)
+                (eq (overlay-get overlay 'category) 'elisp-tred-guide))
+			  overlays)))
+
+(defun elisp-tred--tree-guide-pos-prev ()
+  "Return the position of the previous tree guide overlay, relative to
+point.
+
+Note: This function will skip over the tree guide overlay located at
+point (if any), and return the previous one instead."
+  (catch 'done
+    (save-excursion
+      (while (not (bobp))
+        (goto-char (previous-overlay-change (point)))
+        (when (elisp-tred--tree-guide-at-point-p)
+          (throw 'done (point)))))))
+
+(defun elisp-tred--tree-guide-pos-next ()
+  "Return the position of the next tree guide overlay, relative to
+point.
+
+Note: This function will skip over the tree guide overlay located at
+point (if any), and return the next one instead."
+  (catch 'done
+    (save-excursion
+      (while (not (eobp))
+        (goto-char (next-overlay-change (point)))
+        (when (elisp-tred--tree-guide-at-point-p)
+          (throw 'done (point)))))))
+
 ;;; Whitespace rendering
 ;;
 ;; We use overlays to both hide real whitespace and to add virtual
@@ -755,6 +791,151 @@ whitespace/indentation."
       (elisp-tred--create-whitespace-overlays node nil))
     (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
+;;; Buffer/column position calculations
+
+(defvar-local elisp-tred--pos-goal-column nil
+  "The target column pos we will move to, when moving up/down a line.
+
+The value of this variable remains the same during any sequence
+of repeated movement commands in the same direction (e.g.
+`elisp-tred-line-previous').")
+
+(defun elisp-tred--pos-buffer-to-column (buffer-pos)
+  "Return the column position of the character at BUFFER-POS.
+
+If BUFFER-POS corresponds to an invisible character, return the the
+column position of the first visible character that precedes it."
+  (catch 'done
+    (save-excursion
+      (goto-char buffer-pos)
+      ;; edge case: already at beginning of line
+      (when (elisp-tred--tree-guide-at-point-p)
+        (throw 'done 0))
+      (let ((line-start-pos (or (elisp-tred--tree-guide-pos-prev) (point-min)))
+            (point-prev (point))
+            (column-pos 0))
+        (goto-char (previous-single-char-property-change point-prev 'invisible nil line-start-pos))
+        (while (/= point-prev (point))
+          (unless (invisible-p (point))
+            (setq column-pos (+ column-pos (- point-prev (point)))))
+          (setq point-prev (point))
+          (goto-char (previous-single-char-property-change (point) 'invisible nil line-start-pos)))
+        column-pos))))
+
+(defun elisp-tred--pos-column-to-buffer (column-pos)
+  "Return the buffer position for the character at COLUMN-POS on the
+current line.
+
+If COLUMN-POS is greater than the number of visible characters on the
+current line, return the buffer position corresponding to the last
+visible character on the current line."
+  (catch 'done
+    (save-excursion
+      ;; go to start of line
+      (unless (elisp-tred--tree-guide-at-point-p)
+        (if-let ((pos (elisp-tred--tree-guide-pos-prev)))
+            (goto-char pos)
+          (throw 'done nil)))
+      (let ((bound (or (elisp-tred--tree-guide-pos-next) (point-max)))
+            (distance column-pos)
+            last-visible-pos)
+        (while (< (point) bound)
+          (if (invisible-p (point))
+              (goto-char (next-single-char-property-change (point) 'invisible))
+            (let* ((next-invisible-pos (next-single-char-property-change (point) 'invisible nil bound))
+                   (visible-chars (- next-invisible-pos (point))))
+              (if (> visible-chars distance)
+                  (throw 'done (+ (point) distance))
+                (setq distance (- distance visible-chars))
+                (setq last-visible-pos (1- next-invisible-pos))
+                (goto-char next-invisible-pos)))))
+        ;; `column-pos' was greater than number of visible chars on line.
+        ;; Return position of last visible char on line.
+        last-visible-pos))))
+
+(defun elisp-tred--pos-line-prev (goal-column-pos)
+  "Calculate the buffer position for column position GOAL-COLUMN-POS
+on the next line (relative to point).
+
+If there is no next line, return nil.
+
+If GOAL-COLUMN-POS is greater than the number of visible characters on
+the next line, return the buffer position corresponding to the last
+visible character on the next line."
+  (catch 'done
+    (save-excursion
+      ;; go to start of current line
+      (unless (elisp-tred--tree-guide-at-point-p)
+        (if-let ((pos (elisp-tred--tree-guide-pos-prev)))
+           (goto-char pos)
+         (throw 'done nil)))
+      ;; go to start of previous line
+      (if-let ((pos (elisp-tred--tree-guide-pos-prev)))
+          (goto-char pos)
+        (throw 'done nil))
+      (elisp-tred--go-to-column-pos goal-column-pos)
+      (point))))
+
+(defun elisp-tred--pos-line-next (goal-column-pos)
+  "Calculate the buffer position for column position GOAL-COLUMN-POS
+on the previous line (relative to point).
+
+If there is no previous line, return nil.
+
+If GOAL-COLUMN-POS is greater than the number of visible characters on
+the previous line, return the buffer position corresponding to the
+last visible character on the previous line."
+  (catch 'done
+    (save-excursion
+      (if-let ((pos (elisp-tred--tree-guide-pos-next)))
+          (goto-char pos)
+        (throw 'done nil))
+      (elisp-tred--go-to-column-pos goal-column-pos)
+      (point))))
+
+;;; Movement commands
+;;
+;; I implement my own line movement commands for this mode because
+;; they perform better and have more predictable behaviour.
+;;
+;; Using Emacs' default `previous-line'/`next-line' commands with
+;; `elisp-tred-mode' is a very confusing/frustrating experience,
+;; because `elisp-tred-mode' changes the visual location of newlines
+;; via overlays.
+;;
+;; In theory, Emacs' built-in `visual-line-mode' should solve the
+;; problem of navigating by visual newlines, but in practice I find
+;; `visual-line-mode' to be very laggy in `elisp-tred-mode', and the
+;; cursor often jumps to unexpected places.
+
+(defun elisp-tred--go-to-column-pos (column-pos)
+  "Go the COLUMN-POS on the current line.
+
+If COLUMN-POS is greater than the number of visible characters on the
+current line, go to the last visible character on the current line
+instead."
+  (when-let ((pos (elisp-tred--pos-column-to-buffer column-pos)))
+    (goto-char pos)))
+
+(defun elisp-tred-go-to-line-prev ()
+  "Move to the previous line, maintaining the current column position
+if possible."
+  (interactive)
+  (unless (eq last-command this-command)
+    (setq elisp-tred--pos-goal-column (elisp-tred--pos-buffer-to-column (point))))
+  (if-let ((pos (elisp-tred--pos-line-prev elisp-tred--pos-goal-column)))
+      (goto-char pos)
+    (user-error "no previous line")))
+
+(defun elisp-tred-go-to-line-next ()
+  "Move to the beginning of the next line."
+  (interactive)
+  (unless (eq last-command this-command)
+    (setq elisp-tred--pos-goal-column (elisp-tred--pos-buffer-to-column (point))))
+  (if-let ((pos (elisp-tred--pos-line-next elisp-tred--pos-goal-column)))
+      (goto-char pos)
+    (user-error "no next line")))
+
 ;;; Evil integration
 ;;
 ;; Remap j/k and up/down arrows to move by visual lines rather than
@@ -778,8 +959,8 @@ whitespace/indentation."
 (with-eval-after-load 'evil
   (dolist (state '(normal insert visual motion))
     (evil-define-minor-mode-key state 'elisp-tred-mode
-      (kbd "<down>") #'evil-next-visual-line
-      (kbd "<up>") #'evil-previous-visual-line))
+      (kbd "<down>") #'elisp-tred-go-to-line-next
+      (kbd "<up>") #'elisp-tred-go-to-line-prev))
   (dolist (state '(normal visual motion))
     (evil-define-minor-mode-key state 'elisp-tred-mode
       (kbd "TAB") #'elisp-tred-toggle-current-line-folded
