@@ -130,10 +130,12 @@ Emacs is restarted."
     ;; addition, we call `elisp-tred--force-treesit-reparse' below to
     ;; perform the initial `treesit' parse after enabling
     ;; `elisp-tred-overlay-mode'.
-	;;(treesit-parser-add-notifier parser #'elisp-tred--on-treesit-reparse)
-    ;;(add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
-    ;;(elisp-tred--force-treesit-reparse)
-    (elisp-tred--on-treesit-reparse nil nil)))
+	(treesit-parser-add-notifier parser #'elisp-tred--treesit-change-hook)
+    (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
+    (add-hook 'before-change-functions #'elisp-tred--before-change-hook nil t)
+    (add-hook 'after-change-functions #'elisp-tred--after-change-hook nil t)
+    (let ((root-node (treesit-parser-root-node parser)))
+      (elisp-tred--create-overlays root-node nil))))
 
 (defun elisp-tred--force-treesit-reparse ()
     "Force `treesit' to reparse the buffer.
@@ -148,28 +150,6 @@ e.g. by calling `treesit-parser-root-node'."
         ;; should also work here (see Note above).
         (treesit-parser-root-node parser))))
 
-(defvar-local elisp-tred--pre-redisplay-tick nil
-  "The last `buffer-chars-modified-tick' that we've processed.  This
-is used to work the bug/quirk that Emacs calls its redisplay hooks
-multiple times for the same redisplay event, and the exact number of
-hook invocations isn't even predictable.")
-
-(defun elisp-tred--pre-redisplay (&rest _)
-  "Force reparse of treesit parser, which will trigger notifiers.
-This function is added to `pre-redisplay-functions' to ensure that
-the parse tree is updated before redisplay, similar to how treesit.el
-handles font-lock updates."
-  (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
-    (elisp-tred--force-treesit-reparse)
-    (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
-
-(defun elisp-tred--on-treesit-reparse (ranges _parser)
-  "Update elisp-tred overlays (e.g. tree guides) when the
-`treesit' parse tree changes."
-  (elisp-tred--remove-all-overlays-in-buffer)
-  (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (elisp-tred--create-overlays root-node nil)))
-
 (defun elisp-tred--treesit-parsers ()
   "Return the `treesit' parser object for `elisp-tred'."
   (let ((parsers (treesit-parser-list)))
@@ -182,8 +162,10 @@ handles font-lock updates."
 all treesit-related hook functions."
   (when-let ((parsers (elisp-tred--treesit-parsers)))
     (dolist (parser parsers)
-      (treesit-parser-remove-notifier parser #'elisp-tred--on-treesit-reparse)
+      (treesit-parser-remove-notifier parser #'elisp-tred--treesit-change-hook)
       (remove-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay t)
+      (remove-hook 'before-change-functions #'elisp-tred--before-change-hook t)
+      (remove-hook 'after-change-functions #'elisp-tred--after-change-hook t)
       (treesit-parser-delete parser))))
 
 (defun elisp-tred--get-toplevel-node-with-same-start-pos (node)
@@ -935,6 +917,38 @@ if possible."
   (if-let ((pos (elisp-tred--pos-line-next elisp-tred--pos-goal-column)))
       (goto-char pos)
     (user-error "no next line")))
+
+;;; Live updates during editing
+
+(defvar-local elisp-tred--pre-redisplay-tick nil
+  "The last `buffer-chars-modified-tick' that we've processed.  This
+is used to work the bug/quirk that Emacs calls its redisplay hooks
+multiple times for the same redisplay event, and the exact number of
+hook invocations isn't even predictable.")
+
+(defun elisp-tred--pre-redisplay (&rest _)
+  "Force reparse of treesit parser, which will trigger notifiers.
+This function is added to `pre-redisplay-functions' to ensure that
+the parse tree is updated before redisplay, similar to how treesit.el
+handles font-lock updates."
+  (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
+    ;; do overlay updates here!
+    (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
+
+(defun elisp-tred--treesit-change-hook (ranges parser)
+  (cl-assert (eq (treesit-parser-language parser) 'elisptred))
+  (dolist (range ranges)
+    (let* ((beg (car range))
+           (end (cdr range)))
+      (message "treesit-change-hook: range: (%s . %s)" beg end))))
+
+(defun elisp-tred--before-change-hook (beg end)
+  (message "before-change-hook: (%s, %s)" beg end))
+
+(defun elisp-tred--after-change-hook (beg end pre-change-length)
+  (message "after-change-hook: (%s, %s), pre-change-length: %s" beg end pre-change-length)
+  (setq elisp-tred--change-flag t)
+  (elisp-tred--force-treesit-reparse))
 
 ;;; Evil integration
 ;;
