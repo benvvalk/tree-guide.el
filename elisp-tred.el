@@ -396,7 +396,7 @@ about the purpose of the guide flags."
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'evaporate t)
     (overlay-put overlay 'elisp-tred-folded folded)
-    (overlay-put overlay 'before-string (concat guide-string))))
+    (overlay-put overlay 'before-string guide-string)))
 
 (defun elisp-tred--create-tree-guide-overlays-for-string (node folded guide-flags)
   "Create tree guide overlays for a string, corresponding to
