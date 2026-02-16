@@ -391,6 +391,18 @@ about the purpose of the guide flags."
                   elisp-tred--guide-with-handle
                 elisp-tred--guide-with-handle-last)))))
 
+(defun elisp-tred--tree-guide-string (node)
+  (when (elisp-tred--tree-guide-p node)
+    (let ((guide-flags (elisp-tred--tree-guide-flags node)))
+      (concat "\n" (elisp-tred--tree-guide-flags-to-string guide-flags)))))
+
+(defun elisp-tred--tree-guide-string-at (&optional pos)
+  "Copy the string of tree guide characters that appear immediately
+before POS."
+  (when-let* ((pos (or pos (point)))
+              (overlay (elisp-tred--tree-guide-overlay-at pos)))
+	(overlay-get overlay 'before-string)))
+
 (defun elisp-tred--create-tree-guide-overlay-at (beg end folded guide-string)
   (let ((overlay (make-overlay beg end nil t)))
     (overlay-put overlay 'category 'elisp-tred-guide)
@@ -453,6 +465,16 @@ does not have a tree guide overlay."
     (seq-find (lambda (overlay)
                 (and (= (overlay-start overlay) start)
                      (= (overlay-end overlay) end)
+                     (eq (overlay-get overlay 'category) 'elisp-tred-guide)))
+              overlays)))
+
+(defun elisp-tred--tree-guide-overlay-at (&optional pos)
+  "Return the tree guide overlay that starts at POS, or `nil' if there
+is no such overlay."
+  (let* ((pos (or pos (point)))
+         (overlays (overlays-in pos (1+ pos))))
+    (seq-find (lambda (overlay)
+                (and (= (overlay-start overlay) pos)
                      (eq (overlay-get overlay 'category) 'elisp-tred-guide)))
               overlays)))
 
@@ -844,6 +866,28 @@ visible character on the current line."
         ;; Return position of last visible char on line.
         last-visible-pos))))
 
+(defun elisp-tred--pos-line-start (&optional pos)
+  "Return the position of the first visible character, in the (visual)
+line containing POS.
+
+If POS is `nil', using `(point)' instead."
+  (catch 'done
+    (save-excursion
+      (when pos (goto-char pos))
+      (if (elisp-tred--tree-guide-at-point-p)
+          (throw 'done (point))
+        (throw 'done (elisp-tred--tree-guide-pos-prev))))))
+
+(defun elisp-tred--pos-line-end (&optional pos)
+  "Return the position one after the last visible character, in the
+(visual) line containing POS.
+
+If POS is `nil', using `(point)' instead."
+  (catch 'done
+    (save-excursion
+      (when pos (goto-char pos))
+      (throw 'done (1+ (elisp-tred--pos-column-to-buffer most-positive-fixnum))))))
+
 (defun elisp-tred--pos-line-prev (goal-column-pos)
   "Calculate the buffer position for column position GOAL-COLUMN-POS
 on the next line (relative to point).
@@ -958,6 +1002,44 @@ handles font-lock updates."
   (message "after-change-hook: (%s, %s), pre-change-length: %s" beg end pre-change-length)
   (setq elisp-tred--change-flag t)
   (elisp-tred--force-treesit-reparse))
+
+;;; Copying/killing text
+
+(defun elisp-tred-copy-formatted-lines-as-kill (beg end)
+  "Copy the selected lines to the kill ring, with all elisp-tred
+formatting in tact.
+
+In other words, copy the lines as they appear to the user after
+applying overlays for tree guides, whitespace-hiding, and folding. In
+contrast, a normal Emacs copy operation with `copy-region-as-kill'
+copies the characters from the underlying buffer without any overlays
+applied.
+
+This function is useful for copying tree renderings from elisp-tred
+buffers, for use in documentation and tests."
+  (interactive "r")
+  (let ((beg (elisp-tred--pos-line-start beg))
+        (end (elisp-tred--pos-line-end end))
+        yank-start-pos
+        yanked-text-parts)
+    (save-excursion
+      (goto-char beg)
+      (while (< (point) end)
+        (if (invisible-p (point))
+            ;; yank preceding visible chars (if any)
+            (when yank-start-pos
+              (push (buffer-substring-no-properties yank-start-pos (point)) yanked-text-parts)
+              (setq yank-start-pos nil))
+          ;; else: current text is visible
+          (unless yank-start-pos
+            (setq yank-start-pos (point)))
+          (when (elisp-tred--tree-guide-at-point-p)
+            (push (elisp-tred--tree-guide-string-at) yanked-text-parts)))
+		(goto-char (next-overlay-change (point))))
+	  ;; yank final part of last line
+      (when (and yank-start-pos (< yank-start-pos end))
+        (push (buffer-substring-no-properties yank-start-pos end) yanked-text-parts)))
+    (kill-new (apply #'concat (nreverse yanked-text-parts)))))
 
 ;;; Evil integration
 ;;
