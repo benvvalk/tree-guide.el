@@ -392,7 +392,7 @@ about the purpose of the guide flags."
                 elisp-tred--guide-with-handle-last)))))
 
 (defun elisp-tred--create-tree-guide-overlay-at (beg end folded guide-string)
-  (let ((overlay (make-overlay beg end)))
+  (let ((overlay (make-overlay beg end nil t)))
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'evaporate t)
     (overlay-put overlay 'elisp-tred-folded folded)
@@ -582,7 +582,7 @@ fully invisible."
     (save-excursion
       (goto-char start)
       (while (re-search-forward "[ \t\n\r]+" end t)
-        (let ((overlay (make-overlay (match-beginning 0) (match-end 0))))
+        (let ((overlay (make-overlay (match-beginning 0) (match-end 0) nil t)))
           (overlay-put overlay 'category 'elisp-tred-whitespace)
           (if replacement
               (overlay-put overlay 'display replacement)
@@ -596,7 +596,7 @@ fully invisible."
 (defun elisp-tred--create-fold-overlay (beg end)
   "Create an overlay for a folded multi-line string, where lines 2..N
 are hidden and an ellipsis (`...') is shown instead."
-  (let ((overlay (make-overlay beg end)))
+  (let ((overlay (make-overlay beg end nil t)))
     (overlay-put overlay 'category 'elisp-tred-fold)
     (overlay-put overlay 'display "...")
     overlay))
@@ -619,7 +619,7 @@ single-line string, nothing needs to be done and therefore no overlay
 is created."
   (let* ((start (treesit-node-start node))
          (end (treesit-node-end node))
-         (overlay (make-overlay start start)))
+         (overlay (make-overlay start start nil t)))
     (save-excursion
       (goto-char start)
       (when (re-search-forward elisp-tred--newline-regex end t)
