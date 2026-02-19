@@ -204,6 +204,13 @@ treesit node for the list."
     (beginning-of-visual-line)
     (elisp-tred--treesit-node-at (point))))
 
+(defun elisp-tred--treesit-node-first-in-buffer-p (node)
+  "Return non-nil if NODE is the first treesit node that occurs in the
+the buffer (excluding the root node)."
+  (when-let* ((root (treesit-buffer-root-node 'elisptred))
+              (first-child (treesit-node-child root 0)))
+    (treesit-node-eq first-child node)))
+
 (defun elisp-tred--treesit-traversal (node visitor-func)
   "For the buffer region corresponding to treesit node NODE,
 invoke VISITOR-FUNC on consecutive subregions that correspond to:
@@ -421,7 +428,8 @@ buffer. For multi-line strings, we create separate tree guide overlays
 for each line, but we only show a handle for the first line."
   (let* ((guide-string-line0 (elisp-tred--tree-guide-flags-to-string guide-flags))
          (start (treesit-node-start node))
-         (end (treesit-node-end node)))
+         (end (treesit-node-end node))
+         (newline-prefix (unless (elisp-tred--treesit-node-first-in-buffer-p node) "\n")))
     (save-excursion
       (goto-char start)
       (if (re-search-forward elisp-tred--newline-regex end t)
@@ -436,25 +444,26 @@ for each line, but we only show a handle for the first line."
                                             (if last-child-p
                                                 elisp-tred--no-guide
                                               elisp-tred--guide))))
-            (elisp-tred--create-tree-guide-overlay-at start (point) folded (concat "\n" guide-string-line0))
+            (elisp-tred--create-tree-guide-overlay-at start (point) folded (concat newline-prefix guide-string-line0))
             (let ((point-prev (point)))
               (while (re-search-forward elisp-tred--newline-regex end t)
                 (elisp-tred--create-tree-guide-overlay-at point-prev (point) folded guide-string-rest)
                 (setq point-prev (point)))
               (elisp-tred--create-tree-guide-overlay-at point-prev end folded guide-string-rest)))
         ;; else: not a multi-line string
-        (elisp-tred--create-tree-guide-overlay-at start end folded (concat "\n" guide-string-line0))))))
+        (elisp-tred--create-tree-guide-overlay-at start end folded (concat newline-prefix guide-string-line0))))))
 
 (defun elisp-tred--create-tree-guide-overlays-for-node (node folded guide-flags)
   "Insert the tree guide overlay at the beginning of the line
 for treesit node NODE. "
-  (when-let* ((node-type (treesit-node-type node))
-              (guide-string (elisp-tred--tree-guide-flags-to-string guide-flags))
-              (start (treesit-node-start node))
-              (end (treesit-node-end node)))
-    (if (equal node-type "string")
-        (elisp-tred--create-tree-guide-overlays-for-string node folded guide-flags)
-     (elisp-tred--create-tree-guide-overlay-at start end folded (concat "\n" guide-string)))))
+  (when-let ((guide-string (elisp-tred--tree-guide-flags-to-string guide-flags)))
+    (let* ((node-type (treesit-node-type node))
+           (start (treesit-node-start node))
+           (end (treesit-node-end node))
+           (newline-prefix (unless (elisp-tred--treesit-node-first-in-buffer-p node) "\n")))
+     (if (equal node-type "string")
+         (elisp-tred--create-tree-guide-overlays-for-string node folded guide-flags)
+       (elisp-tred--create-tree-guide-overlay-at start end folded (concat newline-prefix guide-string))))))
 
 (defun elisp-tred--tree-guide-overlay (node)
   "Return the tree guide overlay for treesit node NODE, or nil if NODE
