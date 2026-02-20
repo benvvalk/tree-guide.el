@@ -407,8 +407,9 @@ about the purpose of the guide flags."
   "Copy the string of tree guide characters that appear immediately
 before POS."
   (when-let* ((pos (or pos (point)))
-              (overlay (elisp-tred--tree-guide-overlay-at pos)))
-	(overlay-get overlay 'before-string)))
+              (overlay (elisp-tred--tree-guide-overlay-at pos))
+              (guide-string (overlay-get overlay 'before-string)))
+    (substring-no-properties guide-string)))
 
 (defun elisp-tred--create-tree-guide-overlay-at (beg end folded guide-string)
   (let ((overlay (make-overlay beg end nil t)))
@@ -1012,21 +1013,11 @@ handles font-lock updates."
   (setq elisp-tred--change-flag t)
   (elisp-tred--force-treesit-reparse))
 
-;;; Copying/killing text
+;;; Render elisp-tred tree to kill ring, buffer, string
 
-(defun elisp-tred-copy-formatted-lines-as-kill (beg end)
-  "Copy the selected lines to the kill ring, with all elisp-tred
-formatting in tact.
-
-In other words, copy the lines as they appear to the user after
-applying overlays for tree guides, whitespace-hiding, and folding. In
-contrast, a normal Emacs copy operation with `copy-region-as-kill'
-copies the characters from the underlying buffer without any overlays
-applied.
-
-This function is useful for copying tree renderings from elisp-tred
-buffers, for use in documentation and tests."
-  (interactive "r")
+(defun elisp-tred--render-region-to-string (beg end)
+  "Return a multi-line string containing the formatted elisp-tred
+tree, for the (full) lines overlapping the active region (BEG, END)."
   (let ((beg (elisp-tred--pos-line-start beg))
         (end (elisp-tred--pos-line-end end))
         yank-start-pos
@@ -1048,7 +1039,39 @@ buffers, for use in documentation and tests."
 	  ;; yank final part of last line
       (when (and yank-start-pos (< yank-start-pos end))
         (push (buffer-substring-no-properties yank-start-pos end) yanked-text-parts)))
-    (kill-new (apply #'concat (nreverse yanked-text-parts)))))
+    (apply #'concat (nreverse yanked-text-parts))))
+
+(defun elisp-tred--render-region-as-kill (beg end)
+  "Copy the selected lines to the kill ring, with all elisp-tred
+formatting in tact.
+
+In other words, copy the lines as they appear to the user after
+applying overlays for tree guides, whitespace-hiding, and folding. In
+contrast, a normal Emacs copy operation with `copy-region-as-kill'
+copies the characters from the underlying buffer without any overlays
+applied.
+
+This function is useful for copying tree renderings from elisp-tred
+buffers, for use in documentation and tests."
+  (interactive "r")
+  (kill-new (elisp-tred--render-region-to-string beg end)))
+
+(defun elisp-tred--render-elisp-form-to-buffer-append (quoted-elisp-form buffer)
+  "Append the formatted elisp-tred tree for QUOTED-ELISP-FORM to end
+of BUFFER."
+  (with-current-buffer buffer
+      (goto-char (point-max))
+      (prin1 quoted-elisp-form (current-buffer))
+	  (elisp-tred-mode)))
+
+(defun elisp-tred--render-elisp-form-to-string (quoted-elisp-form)
+  "Return the formatted elisp-tred tree for QUOTED-ELISP-FORM as a
+multi-line string."
+  (let ((buffer (get-buffer-create "*elisp-tred--render-elisp-form-to-string**")))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (elisp-tred--render-elisp-form-to-buffer-append quoted-elisp-form (current-buffer))
+      (elisp-tred--render-region-to-string (point-min) (point-max)))))
 
 ;;; Evil integration
 ;;
