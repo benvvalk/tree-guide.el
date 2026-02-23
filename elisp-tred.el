@@ -204,6 +204,46 @@ treesit node for the list."
     (beginning-of-visual-line)
     (elisp-tred--treesit-node-at (point))))
 
+(defun elisp-tred--treesit-node-overlaps-range-p (node beg end)
+  "Return non-nil if the treesit node NODE overlaps the buffer range
+[BEG, END]."
+  (let ((node-beg (treesit-node-start node))
+        (node-end (treesit-node-end node)))
+    (elisp-tred--ranges-overlap-p node-beg node-end beg end)))
+
+(defun elisp-tred--treesit-top-level-nodes-overlapping-range (beg end)
+  "Return a list of top level treesit nodes overlapping the buffer
+range [BEG, END].
+
+The top level treesit nodes correspond to top level elisp forms such
+as `defun', `defmacro', `defvar', etc."
+  (let* ((root-node (treesit-buffer-root-node 'elisptred))
+         (top-level-node (treesit-node-first-child-for-pos root-node beg t))
+         result)
+    (while (and top-level-node
+                (elisp-tred--treesit-node-overlaps-range-p top-level-node beg end))
+      (push top-level-node result)
+      (setq top-level-node (treesit-node-next-sibling top-level-node t)))
+    (nreverse result)))
+
+(defun elisp-tred--treesit-node-range (node)
+  "Return the buffer range for treesit node NODE as a cons cell (BEG
+. END)."
+  (let ((beg (treesit-node-start node))
+        (end (treesit-node-end node)))
+    (cons beg end)))
+
+(defun elisp-tred--treesit-nodes-range-union (nodes)
+  "Return the union of the buffer ranges for NODES,
+a list of treesit nodes.
+
+The range is returned as a cons cell (BEG . END)."
+  (let (range)
+    (dolist (node nodes)
+      (let ((node-range (elisp-tred--treesit-node-range node)))
+        (setq range (elisp-tred--range-union range node-range))))
+    range))
+
 (defun elisp-tred--treesit-node-first-in-buffer-p (node)
   "Return non-nil if NODE is the first treesit node that occurs in the
 the buffer (excluding the root node)."
@@ -814,6 +854,17 @@ whitespace/indentation."
       (elisp-tred--create-whitespace-overlays node nil))
     (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
+(defun elisp-tred--update-overlays (node)
+  "Update all elisp-tred overlays for treesit node NODE, namely tree
+guide overlays, whitespace overlays, and fold overlays.
+
+We need to update the overlays after the user makes an edit to elisp
+code, in order to ensure that overlays (e.g. tree guides) stay in sync
+with the structure of the code."
+  (let ((folded-p (elisp-tred--folded-p node)))
+    (elisp-tred--remove-overlays node)
+    (elisp-tred--create-overlays node folded-p)))
+
 ;;; Buffer/column position calculations
 
 (defvar-local elisp-tred--pos-goal-column nil
@@ -981,7 +1032,111 @@ if possible."
       (goto-char pos)
     (user-error "no next line")))
 
+;;; Helper functions for buffer ranges
+
+(defun elisp-tred--range-contains-pos-p (beg end pos)
+  "Return non-nil if range [BEG, END] contains POS."
+  (and (>= pos beg) (<= pos end)))
+
+(defun elisp-tred--range-union (range1 range2)
+  "Return the union of RANGE1, RANGE2, and any interval that separates
+them.
+
+In other words, always return a single continuous range that spans
+RANGE1 and RANGE2, even when RANGE1 and RANGE2 don't overlap.
+
+RANGE1, RANGE2, and the return value are cons cells, where the car
+is the start of the range and the cdr is the end of the range.
+
+RANGE1 and/or RANGE2 may be nil. If both RANGE1 and RANGE2 are nil,
+then the returned range is nil. If only RANGE1 is nil then the
+returned range is RANGE2. If only RANGE2 is nil, then the returned
+range is RANGE1."
+  (cond
+   ((not range1) range2)
+   ((not range2) range1)
+   ((and range1 range2)
+    (let ((range1-beg (car range1))
+            (range1-end (cdr range1))
+            (range2-beg (car range2))
+            (range2-end (cdr range2)))
+        (cons (min range1-beg range2-beg)
+              (max range1-end range2-end))))))
+
+(defun elisp-tred--ranges-overlap-p (range1-beg range1-end range2-beg range2-end)
+  "Return non-nil if the range [RANGE1-BEG, RANGE1-END] overlaps
+[RANGE2-BEG, RANGE2-END]."
+  (or (elisp-tred--range-contains-pos-p range1-beg range1-end range2-beg)
+      (elisp-tred--range-contains-pos-p range1-beg range1-end range2-end)
+      (elisp-tred--range-contains-pos-p range2-beg range2-end range1-beg)
+      (elisp-tred--range-contains-pos-p range2-beg range2-end range1-end)))
+
+(defun elisp-tred--range-extend-to-top-level-treesit-nodes (beg end)
+  "Extend the range [BEG, END] to combined range of the top-level
+treesit nodes (e.g. `defun', `defmacro') that overlap [BEG, END]."
+  (let ((overlapping-top-level-nodes (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
+    (elisp-tred--treesit-nodes-range-union overlapping-top-level-nodes)))
+
 ;;; Live updates during editing
+
+(defvar-local elisp-tred--update-range-before-change nil
+  "The union of all buffer change ranges calculated in
+`elisp-tred--before-change-hook' invocations, since we last updated
+the elisp-tred overlays.")
+
+(defvar-local elisp-tred--update-range-after-change nil
+  "The union of all buffer change ranges calculated in
+`elisp-tred--after-change-hook' invocations, since we last updated
+the elisp-tred overlays.")
+
+(defvar-local elisp-tred--update-chars-delta 0
+  "The net number of characters that were added/removed from the
+buffer, since we last updated the elisp-tred overlays.
+
+Negative values indicate number of characters removed and
+positive values indicate number of characters added.")
+
+(defun elisp-tred--update-range-get ()
+  "Return the buffer range for which elisp-tred overlays need to be
+updated, after the user's most recent buffer edit(s).
+
+Determing the correct/minimal update range is a challenging
+problem. The trickiest cases occur performs an edit that results in
+unbalanced parentheses (e.g. adding/deleting a single paren), which
+can potentially change the tree structure for entire rest of the
+buffer.
+
+My current approach for determining the update range is:
+
+(1) Take the range passed to `elisp-tred--before-change-hook' (called
+via `before-change-functions') and extend it to the range of the
+overlapping top-level treesit node(s) (e.g. `defun', `defvar',
+etc.). Record the extended range in
+`elisp-tred--update-range-before-change'.
+(2) Take the range passed to `elisp-tred--after-change-hook' (called
+via `after-change-functions') and extend it to the range of the
+overlapping top level treesit node(s) (e.g. `defun', `defvar',
+etc.). Record the extended range in
+`elisp-tred--update-range-after-change'.
+(3) Take the union of the ranges from steps (1) and (2).
+(4) Clamp the range from step (3) to beginning of the range from
+step (1)."
+  ;; update the before-change range to reflect the number of
+  ;; characters added/removed during the user's most
+  ;; recent buffer edit(s)
+  (when elisp-tred--update-range-before-change
+    (let* ((beg (car elisp-tred--update-range-before-change))
+           (end (cdr elisp-tred--update-range-before-change))
+           (end-new (max beg (+ end elisp-tred--update-chars-delta))))
+      (setq elisp-tred--update-range-before-change (cons beg end-new))))
+  (let ((union-range (elisp-tred--range-union elisp-tred--update-range-before-change
+                                              elisp-tred--update-range-after-change)))
+	(cons (car elisp-tred--update-range-before-change) (cdr union-range))))
+
+(defun elisp-tred--update-range-reset ()
+  (setq elisp-tred--update-range-before-change nil)
+  (setq elisp-tred--update-range-after-change nil)
+  (setq elisp-tred--update-chars-delta 0))
 
 (defvar-local elisp-tred--pre-redisplay-tick nil
   "The last `buffer-chars-modified-tick' that we've processed.  This
@@ -995,7 +1150,13 @@ This function is added to `pre-redisplay-functions' to ensure that
 the parse tree is updated before redisplay, similar to how treesit.el
 handles font-lock updates."
   (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
-    ;; do overlay updates here!
+    (when-let* ((range-to-update (elisp-tred--update-range-get))
+                (beg (car range-to-update))
+                (end (cdr range-to-update))
+                (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
+      (dolist (node nodes-to-update)
+        (elisp-tred--update-overlays node))
+      (elisp-tred--update-range-reset))
     (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
 
 (defun elisp-tred--treesit-change-hook (ranges parser)
@@ -1006,12 +1167,28 @@ handles font-lock updates."
       (message "treesit-change-hook: range: (%s . %s)" beg end))))
 
 (defun elisp-tred--before-change-hook (beg end)
-  (message "before-change-hook: (%s, %s)" beg end))
+  (message "before-change-hook: (%s, %s)" beg end)
+  (let ((range (elisp-tred--range-extend-to-top-level-treesit-nodes beg end)))
+    (setq elisp-tred--update-range-before-change
+          (elisp-tred--range-union elisp-tred--update-range-before-change range))
+    (message "before-change-range: (%s, %s)"
+             (car elisp-tred--update-range-before-change)
+             (cdr elisp-tred--update-range-before-change))))
 
-(defun elisp-tred--after-change-hook (beg end pre-change-length)
-  (message "after-change-hook: (%s, %s), pre-change-length: %s" beg end pre-change-length)
-  (setq elisp-tred--change-flag t)
-  (elisp-tred--force-treesit-reparse))
+(defun elisp-tred--after-change-hook (beg end before-change-length)
+  (message "after-change-hook: (%s, %s), before-change-length: %s" beg end before-change-length)
+  (let* ((after-change-length (- end beg))
+         (chars-delta (- after-change-length before-change-length))
+         (range (elisp-tred--range-extend-to-top-level-treesit-nodes beg end)))
+    (message "chars-delta: %s" chars-delta)
+    (setq elisp-tred--update-range-after-change
+          (elisp-tred--range-union elisp-tred--update-range-after-change range))
+    (message "after-change-range: (%s, %s)"
+             (car elisp-tred--update-range-after-change)
+             (cdr elisp-tred--update-range-after-change))
+    (setq elisp-tred--update-chars-delta
+          (+ elisp-tred--update-chars-delta chars-delta))
+    (message "after-change-chars-delta: %s" elisp-tred--update-chars-delta)))
 
 ;;; Render elisp-tred tree to kill ring, buffer, string
 
