@@ -585,11 +585,28 @@ is no such overlay."
                      (eq (overlay-get overlay 'category) 'elisp-tred-guide)))
               overlays)))
 
+(defun elisp-tred--treesit-node-quoted-or-unquoted-p (node)
+  "Return non-nil if treesit node NODE is a quoted or
+unquoted elisp form.
+
+Examples:
+
+'(1 2 3)
+`(1 2 3)
+,(message \"hello!\")
+@,(1 2 3)"
+  (when-let* ((parent (treesit-node-parent node))
+              (parent-type (treesit-node-type parent)))
+    (member parent-type '("quote" "unquote" "unquote_splice"))))
+
 (defun elisp-tred--tree-guide-p (node)
   "Return `t' if we should insert a tree guide overlay before
 treesit node NODE, or `nil' otherwise."
   (not
       (or
+       ;; Show quoted lists/vectors on the same line as their
+       ;; preceding quote/unquote.
+       (elisp-tred--treesit-node-quoted-or-unquoted-p node)
        ;; 'defun'/`defmacro'/`defvar' forms:
        ;; Disable tree guides for the three list elements, so that
        ;; they are shown on the same line.
