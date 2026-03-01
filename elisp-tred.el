@@ -665,6 +665,11 @@ fully invisible."
 ;; Implements collapsing/expanding of the current line using the TAB
 ;; key.
 
+(defvar-local elisp-tred--fold-toggle-top-level-state nil
+  "Non-nil if all top-level nodes (e.g. `defun' forms) are currently folded.
+
+This variable is toggled by `elisp-tred-fold-toggle-top-level'.")
+
 (defun elisp-tred--create-fold-overlay (beg end)
   "Create an overlay for a folded multi-line string, where lines 2..N
 are hidden and an ellipsis (`...') is shown instead."
@@ -816,6 +821,17 @@ length limit specified by `elisp-tred-max-label-length'."
   (when-let* ((node (elisp-tred--node-for-current-line)))
     (let ((folded (elisp-tred--folded-p node)))
       (elisp-tred--set-node-folded node (not folded)))))
+
+(defun elisp-tred-fold-toggle-top-level ()
+  "Toggle the folded/unfolded state of all top-level nodes
+(e.g. `defun', `defmacro', `defvar', etc.)"
+  (interactive)
+  ;; set new global folding state
+  (setq elisp-tred--fold-toggle-top-level-state (not elisp-tred--fold-toggle-top-level-state))
+  ;; update fold overlays to match new state
+  (let ((root-node (treesit-buffer-root-node 'elisptred)))
+    (dolist (top-level-node (treesit-node-children root-node t))
+      (elisp-tred--set-node-folded top-level-node elisp-tred--fold-toggle-top-level-state))))
 
 ;;; High-level overlay functions
 ;;
@@ -1283,6 +1299,7 @@ multi-line string."
 ;;; Keymap
 
 (defvar-keymap elisp-tred-mode-map
+  "<backtab>" #'elisp-tred-fold-toggle-top-level
   "TAB" #'elisp-tred-toggle-current-line-folded)
 
 ;;; Minor mode definition
