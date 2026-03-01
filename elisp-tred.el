@@ -251,6 +251,63 @@ the buffer (excluding the root node)."
               (first-child (treesit-node-child root 0)))
     (treesit-node-eq first-child node)))
 
+(defun elisp-tred--treesit-node-atom-p (node)
+  "Return non-nil if treesit node NODE is a lisp atom (e.g. a string,
+a symbol name), as opposed to a nested type (e.g. a list, a vector)."
+  (let ((type (treesit-node-type node)))
+    (not (member type
+                 '("list"
+                   "vector"
+                   "hash_table"
+                   "bytecode"
+                   "string_text_properties"
+                   "quote"
+                   "unquote"
+                   "unquote_splice")))))
+
+(defun elisp-tred--treesit-node-defun-defmacro-defvar-name-p (node)
+  "Return non-nil if treesit node NODE is the declared name for a
+function, macro, or variable."
+  (when (= (treesit-node-index node t) 1)
+    (when-let* ((parent (treesit-node-parent node))
+                (parent-type (treesit-node-type parent))
+                (child0 (treesit-node-child parent 0 t))
+                (child0-text (treesit-node-text child0 t)))
+	  (and (string= parent-type "list")
+           (member child0-text '("defun" "defmacro" "defvar" "defvar-local" "defcustom"))))))
+
+(defun elisp-tred--treesit-node-defun-defmacro-arglist-p (node)
+  "Return non-nil if treesit node NODE is the argument list for
+a `defun' or `defmacro' declaration."
+  (when (= (treesit-node-index node t) 2)
+    (when-let* ((node-type (treesit-node-type node))
+                (parent (treesit-node-parent node))
+                (parent-type (treesit-node-type parent))
+                (child0 (treesit-node-child parent 0 t))
+                (child0-text (treesit-node-text child0 t)))
+	  (and (string= parent-type "list")
+           (string= node-type "list")
+           (member child0-text '("defun" "defmacro"))))))
+
+(defun elisp-tred--treesit-node-defvar-atomic-value-p (node)
+  "Return non-nil if treesit node NODE is the default variable value
+in a `defvar'/`defvar-local'/`defcustom' declaration, and the value is
+an atomic type (e.g. a string, a float).
+
+Return nil if NODE is a non-atomic type (e.g. a list, a vector)."
+  (when (and (= (treesit-node-index node t) 2)
+             (elisp-tred--treesit-node-atom-p node))
+    (when-let* ((parent (treesit-node-parent node))
+                (parent-type (treesit-node-type parent))
+                (child0 (treesit-node-child parent 0 t))
+                (child0-text (treesit-node-text child0 t)))
+	  (and (string= parent-type "list")
+           (member child0-text '("defvar" "defvar-local" "defcustom"))))))
+
+(defun elisp-tred--treesit-node-defun-defmacro-arg-p (node)
+  (when-let (parent (treesit-node-parent node))
+    (elisp-tred--treesit-node-defun-defmacro-arglist-p parent)))
+
 (defun elisp-tred--treesit-traversal (node visitor-func)
   "For the buffer region corresponding to treesit node NODE,
 invoke VISITOR-FUNC on consecutive subregions that correspond to:
@@ -531,13 +588,21 @@ is no such overlay."
 (defun elisp-tred--tree-guide-p (node)
   "Return `t' if we should insert a tree guide overlay before
 treesit node NODE, or `nil' otherwise."
-  (unless
-      ;; Omit tree guide for first child of a sequence (list or
-      ;; vector), so that it is shown on the same line as its opening
-      ;; paren/bracket.
-      (and (elisp-tred--first-child-p node)
-           (eq (treesit-node-child-count node t) 0))
-    t))
+  (not
+      (or
+       ;; 'defun'/`defmacro'/`defvar' forms:
+       ;; Disable tree guides for the three list elements, so that
+       ;; they are shown on the same line.
+       ;; Example: "(defun hello-world (name)...".
+       (elisp-tred--treesit-node-defun-defmacro-defvar-name-p node)
+       (elisp-tred--treesit-node-defun-defmacro-arglist-p node)
+       (elisp-tred--treesit-node-defun-defmacro-arg-p node)
+       (elisp-tred--treesit-node-defvar-atomic-value-p node)
+       ;; Omit tree guide for first child of a sequence (list or
+       ;; vector), so that it is shown on the same line as its opening
+       ;; paren/bracket.
+       (and (elisp-tred--first-child-p node)
+            (eq (treesit-node-child-count node t) 0)))))
 
 (defun elisp-tred--create-tree-guide-overlays (node folded &optional guide-flags)
   "Create the tree guide overlays for treesit node NODE and all of its
@@ -615,32 +680,32 @@ contains only whitespace characters."
 within a string or comment (e.g. indentation and newlines). We want
 to hide all such whitespace so that we display the tree structure in a
 consistent and predictable manner."
-  (let ((replacement (when folded " "))
-        (children (treesit-node-children node t)))
-    (when children
-      ;; Hide whitespace before the first child
-      (let* ((first-child (car children))
-             (gap-start (treesit-node-start node))
-             (gap-end (treesit-node-start first-child)))
-        (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
+  (when-let ((children (treesit-node-children node t)))
+    (let* ((first-child (car children))
+           (gap-start (treesit-node-start node))
+           (gap-end (treesit-node-start first-child))
+           (replacement (when (or folded (not (elisp-tred--tree-guide-p first-child))) " ")))
+      (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
 
-      ;; Hide whitespace between consecutive children
-      (let ((prev-child (car children)))
-        (dolist (curr-child (cdr children))
-          (let ((gap-start (treesit-node-end prev-child))
-                (gap-end (treesit-node-start curr-child)))
-            (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
-          (setq prev-child curr-child)))
+    ;; Hide whitespace between consecutive children
+    (let ((prev-child (car children)))
+      (dolist (curr-child (cdr children))
+        (let* ((gap-start (treesit-node-end prev-child))
+               (gap-end (treesit-node-start curr-child))
+               (replacement (when (or folded (not (elisp-tred--tree-guide-p curr-child))) " ")))
+          (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
+        (setq prev-child curr-child)))
 
-      ;; Hide whitespace after the last child
-      (let* ((last-child (car (last children)))
-             (gap-start (treesit-node-end last-child))
-             (gap-end (treesit-node-end node)))
-        (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
+    ;; Hide whitespace after the last child
+    (let* ((last-child (car (last children)))
+           (gap-start (treesit-node-end last-child))
+           (gap-end (treesit-node-end node))
+           (replacement (when folded " ")))
+      (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
 
-      ;; Recursively process children
-      (dolist (child children)
-        (elisp-tred--create-whitespace-overlays child folded)))))
+    ;; Recursively process children
+    (dolist (child children)
+      (elisp-tred--create-whitespace-overlays child folded))))
 
 (defun elisp-tred--hide-whitespace-in-range (start end &optional replacement)
   "Hide each contiguous sequence of whitespace characters in the range
