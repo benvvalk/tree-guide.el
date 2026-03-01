@@ -815,7 +815,7 @@ length limit specified by `elisp-tred-max-label-length'."
   (when-let ((node (elisp-tred--node-for-current-line)))
     (elisp-tred--set-node-folded node folded)))
 
-(defun elisp-tred-toggle-current-line-folded ()
+(defun elisp-tred-fold-toggle-current-line ()
   "Toggle the folded/unfolded state of the current line."
   (interactive)
   (when-let* ((node (elisp-tred--node-for-current-line)))
@@ -1292,7 +1292,7 @@ multi-line string."
       (kbd "<up>") #'elisp-tred-go-to-line-prev))
   (dolist (state '(normal visual motion))
     (evil-define-minor-mode-key state 'elisp-tred-mode
-      (kbd "TAB") #'elisp-tred-toggle-current-line-folded
+      (kbd "TAB") #'elisp-tred-fold-toggle-current-line
       (kbd "j") #'evil-next-visual-line
       (kbd "k") #'evil-previous-visual-line)))
 
@@ -1300,7 +1300,7 @@ multi-line string."
 
 (defvar-keymap elisp-tred-mode-map
   "<backtab>" #'elisp-tred-fold-toggle-top-level
-  "TAB" #'elisp-tred-toggle-current-line-folded)
+  "TAB" #'elisp-tred-fold-toggle-current-line)
 
 ;;; Minor mode definition
 
