@@ -728,12 +728,11 @@ treesit node NODE.
 
 NOTE: We need the extra level of indirection provided by this
 function-that-returns-a-function because
-`elisp-tred--treesit-traversal' does not provide invoke the visitor
-function with all of the information we need. In addition to the
-arguments provided by `elisp-tred--treesit-traversal', we also need to
-know the total number of visible characters we have visited so far
-(i.e. the working length), and the root node for the subtree that
-we are folding."
+`elisp-tred--treesit-traversal' does not invoke the visitor function
+with all of the arguments we need. In particular, we also need to know
+the total number of visible characters we have visited so far
+(i.e. the working length), and the root node for the subtree that we
+are folding."
   (let ((fold-end-pos (elisp-tred--fold-end-pos root-node))
         (length 0))
     (lambda (region-type node beg end)
