@@ -308,6 +308,17 @@ Return nil if NODE is a non-atomic type (e.g. a list, a vector)."
   (when-let (parent (treesit-node-parent node))
     (elisp-tred--treesit-node-defun-defmacro-arglist-p parent)))
 
+(defun elisp-tred--treesit-node-let-declarations-list-p (node)
+  "Return non-nil if treesit node NODE is the list of
+variable declarations for a `let' form."
+  (when (= (treesit-node-index node t) 1)
+    (when-let* ((parent (treesit-node-parent node))
+                (parent-type (treesit-node-type parent))
+                (child0 (treesit-node-child parent 0 t))
+                (child0-text (treesit-node-text child0 t)))
+      (and (string= parent-type "list")
+           (member child0-text '("let" "let*" "if-let" "if-let*" "when-let" "when-let*"))))))
+
 (defun elisp-tred--treesit-traversal (node visitor-func)
   "For the buffer region corresponding to treesit node NODE,
 invoke VISITOR-FUNC on consecutive subregions that correspond to:
@@ -604,6 +615,9 @@ Examples:
 treesit node NODE, or `nil' otherwise."
   (not
       (or
+       ;; Show open paren for `let' declarations on same line
+       ;; as `let'.
+       (elisp-tred--treesit-node-let-declarations-list-p node)
        ;; Show quoted lists/vectors on the same line as their
        ;; preceding quote/unquote.
        (elisp-tred--treesit-node-quoted-or-unquoted-p node)
