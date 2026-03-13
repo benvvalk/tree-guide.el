@@ -251,6 +251,17 @@ the buffer (excluding the root node)."
               (first-child (treesit-node-child root 0)))
     (treesit-node-eq first-child node)))
 
+(defun elisp-tred--treesit-node-top-level-p (node)
+  "Return non-nil if treesit node NODE is a top-level elisp form
+(e.g. `defun', `defmacro'), i.e. a child node of the root
+`source_file' node.
+
+Note: The function returns nil if NODE is the root `source_file'
+node."
+  (let ((parent (treesit-node-parent node))
+        (root-node (treesit-buffer-root-node 'elisptred)))
+    (treesit-node-eq parent root-node)))
+
 (defun elisp-tred--treesit-node-atom-p (node)
   "Return non-nil if treesit node NODE is a lisp atom (e.g. a string,
 a symbol name), as opposed to a nested type (e.g. a list, a vector)."
@@ -629,10 +640,38 @@ treesit node NODE, or `nil' otherwise."
        (elisp-tred--treesit-node-defun-defmacro-arglist-p node)
        (elisp-tred--treesit-node-defun-defmacro-arg-p node)
        (elisp-tred--treesit-node-defvar-atomic-value-p node)
-       ;; Omit tree guide for first child of a sequence (list or
-       ;; vector), so that it is shown on the same line as its opening
-       ;; paren/bracket.
+       ;; In most cases (see exceptions below), render the first child
+       ;; of a list/vector on the same line as its opening
+       ;; paren/bracket. This mimics how elisp code is typically
+       ;; formatted, and greatly improves the vertical compactness of
+       ;; the tree.
+       ;;
+       ;; For example, we render `(a b c)' as:
+       ;;
+       ;; ╰─ (a
+       ;;    ├─ b
+       ;;    ╰─ c)
+       ;;
+       ;; instead of:
+       ;;
+       ;; ╰─ (
+       ;;    ├─ a
+       ;;    ├─ b
+       ;;    ╰─ c)
+       ;;
+       ;; Exceptions:
+       ;;
+       ;; (1) If the first child is a top-level node, i.e. it is a
+       ;; child of the `source_file' root node, we render it
+       ;; with a tree guide. Examples: a comment (`;; ...')  or
+       ;; `defun' declaration on the first line of an elisp file.
+       ;;
+       ;; (2) If the first child is a complex type (e.g. a nested
+       ;; list) we render it on a new line with its own tree guide. We
+       ;; test for this case by checking if the first child has > 0
+       ;; children.
        (and (elisp-tred--first-child-p node)
+            (not (elisp-tred--treesit-node-top-level-p node))
             (eq (treesit-node-child-count node t) 0)))))
 
 (defun elisp-tred--create-tree-guide-overlays (node folded &optional guide-flags)
