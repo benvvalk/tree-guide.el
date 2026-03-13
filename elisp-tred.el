@@ -1212,10 +1212,10 @@ positive values indicate number of characters added.")
 updated, after the user's most recent buffer edit(s).
 
 Determing the correct/minimal update range is a challenging
-problem. The trickiest cases occur performs an edit that results in
-unbalanced parentheses (e.g. adding/deleting a single paren), which
-can potentially change the tree structure for entire rest of the
-buffer.
+problem. The trickiest cases occur when the user performs an edit that
+results in unbalanced parentheses (e.g. adding/deleting a single
+paren), which can potentially change the tree structure for entire
+rest of the buffer.
 
 My current approach for determining the update range is:
 
