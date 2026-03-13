@@ -319,6 +319,20 @@ variable declarations for a `let' form."
       (and (string= parent-type "list")
            (member child0-text '("let" "let*" "if-let" "if-let*" "when-let" "when-let*"))))))
 
+(defun elisp-tred--treesit-node-quoted-or-unquoted-p (node)
+  "Return non-nil if treesit node NODE is a quoted or
+unquoted elisp form.
+
+Examples:
+
+'(1 2 3)
+`(1 2 3)
+,(message \"hello!\")
+@,(1 2 3)"
+  (when-let* ((parent (treesit-node-parent node))
+              (parent-type (treesit-node-type parent)))
+    (member parent-type '("quote" "unquote" "unquote_splice"))))
+
 (defun elisp-tred--treesit-traversal (node visitor-func)
   "For the buffer region corresponding to treesit node NODE,
 invoke VISITOR-FUNC on consecutive subregions that correspond to:
@@ -595,20 +609,6 @@ is no such overlay."
                 (and (= (overlay-start overlay) pos)
                      (eq (overlay-get overlay 'category) 'elisp-tred-guide)))
               overlays)))
-
-(defun elisp-tred--treesit-node-quoted-or-unquoted-p (node)
-  "Return non-nil if treesit node NODE is a quoted or
-unquoted elisp form.
-
-Examples:
-
-'(1 2 3)
-`(1 2 3)
-,(message \"hello!\")
-@,(1 2 3)"
-  (when-let* ((parent (treesit-node-parent node))
-              (parent-type (treesit-node-type parent)))
-    (member parent-type '("quote" "unquote" "unquote_splice"))))
 
 (defun elisp-tred--tree-guide-p (node)
   "Return `t' if we should insert a tree guide overlay before
