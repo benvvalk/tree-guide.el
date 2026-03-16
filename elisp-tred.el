@@ -1294,19 +1294,24 @@ is used to work the bug/quirk that Emacs calls its redisplay hooks
 multiple times for the same redisplay event, and the exact number of
 hook invocations isn't even predictable.")
 
+(defun elisp-tred--update ()
+  "Update elisp-tred overlays so the tree structure reflects the
+user's most recent edits to the buffer."
+  (when-let* ((range-to-update (elisp-tred--update-range-get))
+              (beg (car range-to-update))
+              (end (cdr range-to-update))
+              (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
+    (dolist (node nodes-to-update)
+      (elisp-tred--update-overlays node))
+    (elisp-tred--update-range-reset)))
+
 (defun elisp-tred--pre-redisplay (&rest _)
   "Force reparse of treesit parser, which will trigger notifiers.
 This function is added to `pre-redisplay-functions' to ensure that
 the parse tree is updated before redisplay, similar to how treesit.el
 handles font-lock updates."
   (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
-    (when-let* ((range-to-update (elisp-tred--update-range-get))
-                (beg (car range-to-update))
-                (end (cdr range-to-update))
-                (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
-      (dolist (node nodes-to-update)
-        (elisp-tred--update-overlays node))
-      (elisp-tred--update-range-reset))
+    (elisp-tred--update)
     (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
 
 (defun elisp-tred--treesit-change-hook (ranges parser)
