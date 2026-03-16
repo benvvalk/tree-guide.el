@@ -1358,10 +1358,14 @@ tree, for the (full) lines overlapping the active region (BEG, END)."
               (push (buffer-substring-no-properties yank-start-pos (point)) yanked-text-parts)
               (setq yank-start-pos nil))
           ;; else: current text is visible
-          (unless yank-start-pos
-            (setq yank-start-pos (point)))
           (when (elisp-tred--tree-guide-at-point-p)
-            (push (elisp-tred--tree-guide-string-at) yanked-text-parts)))
+            ;; yank previously accumulated text before tree guide
+            (when yank-start-pos
+              (push (buffer-substring-no-properties yank-start-pos (point)) yanked-text-parts)
+              (setq yank-start-pos nil))
+            (push (elisp-tred--tree-guide-string-at) yanked-text-parts))
+          (unless yank-start-pos
+            (setq yank-start-pos (point))))
 		(goto-char (next-overlay-change (point))))
 	  ;; yank final part of last line
       (when (and yank-start-pos (< yank-start-pos end))
