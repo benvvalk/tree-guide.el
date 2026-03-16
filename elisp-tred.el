@@ -1388,6 +1388,13 @@ tree, for the (full) lines overlapping the active region (BEG, END)."
         (push (buffer-substring-no-properties yank-start-pos end) yanked-text-parts)))
     (apply #'concat (nreverse yanked-text-parts))))
 
+(defun elisp-tred--render-buffer-to-string (&optional buffer)
+  "Return a multi-line string with formatted elisp-tred tree from BUFFER."
+  (with-current-buffer (or buffer (current-buffer))
+    (unless elisp-tred-mode
+      (user-error "target buffer is not an elisp-tred buffer"))
+    (elisp-tred--render-region-to-string (point-min) (point-max))))
+
 (defun elisp-tred--render-region-as-kill (beg end)
   "Copy the selected lines to the kill ring, with all elisp-tred
 formatting in tact.
