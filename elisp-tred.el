@@ -1345,7 +1345,18 @@ handles font-lock updates."
           (+ elisp-tred--update-chars-delta chars-delta))
     (message "after-change-chars-delta: %s" elisp-tred--update-chars-delta)))
 
-;;; Render elisp-tred tree to kill ring, buffer, string
+;;; Render formatted elisp-tred tree to kill ring, buffer, string
+;;
+;; Note: When the user copies text from an elisp-tred buffer, they get
+;; the raw text from the underlying file, not the formatted tree.
+;; That is just how overlays work in Emacs -- the user cannot position
+;; the cursor on the virtual characters added by overlays (e.g. tree
+;; guide characters), which means that the text is neither selectable
+;; nor copyable.
+;;
+;; This section implements specialized functions that make it possible
+;; to copy the formatted elisp-tred tree, which is super useful for
+;; documentation and tests.
 
 (defun elisp-tred--render-region-to-string (beg end)
   "Return a multi-line string containing the formatted elisp-tred
