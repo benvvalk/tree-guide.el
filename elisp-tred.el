@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'seq)
+(require 'track-changes)
 (require 'treesit)
 
 (defconst elisp-tred-grammar-version "0.0.1"
@@ -134,6 +135,7 @@ Emacs is restarted."
     (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
     (add-hook 'before-change-functions #'elisp-tred--before-change-hook nil t)
     (add-hook 'after-change-functions #'elisp-tred--after-change-hook nil t)
+    (setq elisp-tred--update-change-tracker-id (track-changes-register nil))
     (let ((root-node (treesit-parser-root-node parser)))
       (elisp-tred--create-overlays root-node nil))))
 
@@ -166,6 +168,8 @@ all treesit-related hook functions."
       (remove-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay t)
       (remove-hook 'before-change-functions #'elisp-tred--before-change-hook t)
       (remove-hook 'after-change-functions #'elisp-tred--after-change-hook t)
+      (when elisp-tred--update-change-tracker-id
+        (track-changes-unregister elisp-tred--update-change-tracker-id))
       (treesit-parser-delete parser))))
 
 (defun elisp-tred--get-toplevel-node-with-same-start-pos (node)
@@ -1246,6 +1250,13 @@ buffer, since we last updated the elisp-tred overlays.
 Negative values indicate number of characters removed and
 positive values indicate number of characters added.")
 
+(defvar-local elisp-tred--update-change-tracker-id nil
+  "The change tracker ID returned by `track-changes-register'.
+
+Passed to `track-changes-fetch' to retrieve a description of the
+latest changes the user has made to the buffer (if any), so we can
+Elisp-Tred tree structure in sync with the elisp code.")
+
 (defun elisp-tred--update-range-get ()
   "Return the buffer range for which elisp-tred overlays need to be
 updated, after the user's most recent buffer edit(s).
@@ -1297,6 +1308,7 @@ hook invocations isn't even predictable.")
 (defun elisp-tred--update ()
   "Update elisp-tred overlays so the tree structure reflects the
 user's most recent edits to the buffer."
+  (track-changes-fetch elisp-tred--update-change-tracker-id #'elisp-tred--update-track-changes-fetch-callback)
   (when-let* ((range-to-update (elisp-tred--update-range-get))
               (beg (car range-to-update))
               (end (cdr range-to-update))
@@ -1344,6 +1356,9 @@ handles font-lock updates."
     (setq elisp-tred--update-chars-delta
           (+ elisp-tred--update-chars-delta chars-delta))
     (message "after-change-chars-delta: %s" elisp-tred--update-chars-delta)))
+
+(defun elisp-tred--update-track-changes-fetch-callback (beg end before)
+  (message "track-changes-fetch: (%s, %s) (before: \"%s\")" beg end before))
 
 ;;; Render formatted elisp-tred tree to kill ring, buffer, string
 ;;
