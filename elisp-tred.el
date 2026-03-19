@@ -1459,6 +1459,20 @@ buffers, for use in documentation and tests."
   (interactive "r")
   (kill-new (elisp-tred--render-region-to-string beg end)))
 
+(defun elisp-tred-render-region-replace (beg end)
+  "Replace the selected elisp form(s) with the formatted Elisp-Tred
+tree."
+  (interactive "r")
+  (let* ((orig-text (buffer-substring-no-properties beg end))
+         (replacement-text (with-temp-buffer
+                             (insert orig-text)
+                             (elisp-tred-mode)
+                             (elisp-tred--render-buffer-to-string))))
+    (save-excursion
+      	(goto-char beg)
+		(delete-char (- end beg))
+	    (insert replacement-text))))
+
 (defun elisp-tred--render-elisp-form-to-buffer-append (quoted-elisp-form buffer)
   "Append the formatted elisp-tred tree for QUOTED-ELISP-FORM to end
 of BUFFER."
