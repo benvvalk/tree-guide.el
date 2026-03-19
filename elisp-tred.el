@@ -1339,6 +1339,25 @@ is used to work the bug/quirk that Emacs calls its redisplay hooks
 multiple times for the same redisplay event, and the exact number of
 hook invocations isn't even predictable.")
 
+(defun elisp-tred--update-change-get ()
+  "Return the current set of pending user buffer edits, combined into
+a single change description.
+
+A buffer edit is \"pending\" if we have not yet made the corresponding
+updates to the Elisp-Tred overlays, to ensure that the structure of
+the Elisp-Tred tree stays in sync with the structure of the elisp
+code.
+
+The returned change description is a list consisting of:
+
+(1) BEG, the start position of the changed text
+(2) END, the end position of the changed text
+(3) BEFORE, a string containing the previous text content of the (BEG,
+END) range"
+  (let* ((change-tracker-id elisp-tred--update-change-tracker-id)
+         (fetch-changes-callback #'elisp-tred--update-track-changes-fetch-callback))
+	(track-changes-fetch change-tracker-id fetch-changes-callback)))
+
 (defun elisp-tred--update ()
   "Update elisp-tred overlays so the tree structure reflects the
 user's most recent edits to the buffer."
@@ -1392,7 +1411,8 @@ handles font-lock updates."
     (message "after-change-chars-delta: %s" elisp-tred--update-chars-delta)))
 
 (defun elisp-tred--update-track-changes-fetch-callback (beg end before)
-  (message "track-changes-fetch: (%s, %s) (before: \"%s\")" beg end before))
+  (message "track-changes-fetch: (%s, %s) (before: \"%s\")" beg end before)
+  (list beg end before))
 
 ;;; Render formatted elisp-tred tree to kill ring, buffer, string
 ;;
