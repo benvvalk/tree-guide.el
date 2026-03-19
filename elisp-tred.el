@@ -327,6 +327,42 @@ Examples:
               (parent-type (treesit-node-type parent)))
     (member parent-type '("quote" "unquote" "unquote_splice"))))
 
+(defun elisp-tred--treesit-node-structural-diff-p (node1 node2)
+  "Return non-nil if treesit node NODE1 has a different structure than
+treesit NODE2.
+
+NODE1 and NODE2 are considered to have the same structure if they have
+same treesit node types and number of children, recursively.
+
+Note that the buffer ranges of NODE1 and NODE2 can be different while
+still having the same tree structure. For example, this can happen
+with adding whitespace between list members, which does not change the
+structure of the treesit parse tree."
+  (catch 'done
+    (let ((node1-type (treesit-node-type node1))
+          (node2-type (treesit-node-type node2)))
+      (when (not (string= node1-type node2-type))
+        (throw 'done t))
+	  (let ((node1-children (treesit-node-children node1 t))
+            (node2-children (treesit-node-children node2 t)))
+        (elisp-tred--treesit-nodes-structural-diff-p node1-children node2-children)))))
+
+(defun elisp-tred--treesit-nodes-structural-diff-p (nodes1 nodes2)
+  "Return non-nil if two lists of treesit nodes, NODES1 and NODES2,
+are structurally different.
+
+NODES1 and NODES2 are considered to have the same structure if NODES1
+and NODES2 have the same number of nodes, and the corresponding pairs
+of nodes have the same structure.
+
+A pair of treesit nodes are considered to have the same structure if
+they have the same treesit node types (e.g. `list') and have the same
+number of children, recursively. The comparison between individual
+pairs of nodes is done with
+`elisp-tred--treesit-node-structural-diff-p'."
+  (or (/= (length nodes1) (length nodes2))
+      (cl-some #'elisp-tred--treesit-node-structural-diff-p nodes1 nodes2)))
+
 (defun elisp-tred--treesit-traversal (node visitor-func)
   "For the buffer region corresponding to treesit node NODE,
 invoke VISITOR-FUNC on consecutive subregions that correspond to:
@@ -1384,6 +1420,24 @@ is used to work the bug/quirk that Emacs calls its redisplay hooks
 multiple times for the same redisplay event, and the exact number of
 hook invocations isn't even predictable.")
 
+(defun elisp-tred--update-tree-structure-changed-p (change)
+  "Return non-nil if the given buffer edit CHANGE would change the
+structure of the treesit parse tree.
+
+Certain types of buffer edits, such adding whitespace or renaming a
+symbol, do not have any effect on the treesit parse tree."
+  (let* ((beg (nth 0 change))
+         (end (nth 1 change))
+         (before (nth 2 change))
+         (top-level-nodes-before
+          (with-current-buffer elisp-tred--update-shadow-buffer
+            (elisp-tred--treesit-top-level-nodes-overlapping-range beg (+ beg (length before)))))
+         (top-level-nodes-after
+          (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
+    (elisp-tred--treesit-nodes-structural-diff-p
+     top-level-nodes-before
+     top-level-nodes-after)))
+
 (defun elisp-tred--update-change-get ()
   "Return the current set of pending user buffer edits, combined into
 a single change description.
@@ -1408,15 +1462,30 @@ END) range"
 user's most recent edits to the buffer."
   ;; prevent infinite recursion
   (message "change: %s" change)
-  (let* ((change-beg (nth 0 change))
-         (change-end (nth 1 change))
-         (change-before (nth 2 change))
-         (update-range (elisp-tred--update-range-calculate change))
-         (update-beg (car update-range))
-         (update-end (cdr update-range))
-         (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
-    (dolist (node nodes-to-update)
-      (elisp-tred--update-overlays node))
+  (let ((change-beg (nth 0 change))
+        (change-end (nth 1 change))
+		(change-before (nth 2 change))
+        (tree-structure-changed-p (elisp-tred--update-tree-structure-changed-p change)))
+    ;; If the structure of the treesit parse tree hasn't changed,
+    ;; don't update the Elisp-Tred overlays.
+    ;;
+    ;; The main reason we avoid updating the overlays for
+    ;; non-structural edits is that we don't want our whitespace
+    ;; overlays to immediately hide space/newline characters that the
+    ;; user has just typed into the buffer. This would make it appear
+    ;; that nothing is happening while the user is typing in the
+    ;; buffer, which is very disconcerting.
+    ;;
+    ;; Skipping overlay updates may have some performance benefit as
+    ;; well, but that is not the main motivation.
+    (message "tree-structure-changed-p: %s" tree-structure-changed-p)
+    (when tree-structure-changed-p
+      (let* ((update-range (elisp-tred--update-range-calculate change))
+             (update-beg (car update-range))
+             (update-end (cdr update-range))
+             (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
+        (dolist (node nodes-to-update)
+          (elisp-tred--update-overlays node))))
     ;; re-sync shadow buffer to main buffer, in preparation
     ;; for user's next edit
     (elisp-tred--update-shadow-buffer-apply-change change-beg change-end change-before)))
