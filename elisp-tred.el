@@ -105,37 +105,14 @@ Emacs is restarted."
   (unless (treesit-ready-p 'elisptred)
     (user-error "Failed to load elisp-tred grammar (buffer too large?)"))
   (let ((parser (treesit-parser-create 'elisptred (current-buffer) t)))
-    ;; NOTE: For now, disable automatic treesit re-parsing on buffer
-    ;; changes, until I can address the slowness I am seeing with
-    ;; scrolling/paging in a static buffer (parsed once on load).  I
-    ;; believe the scrolling slowness is caused by using a large
-    ;; number of overlays, which I have heard Emacs does not handle
-    ;; well.
-    ;;
-    ;; Set up a hook to call the `elisp-tred--on-treesit-reparse'
-    ;; function whenever the `treesit' parse tree changes. This allows
-    ;; us to keep the overlays for the tree guides in sync with the
-    ;; structure of the elisp code.
-    ;;
-    ;; Note: At first, I expected that `treesit' would automatically
-    ;; reparse the buffer and call `elisp-tred--on-treesit-reparse'
-    ;; whenever the user edited text in the buffer. However, `treesit'
-    ;; does not work this way! Instead, `treesit' lazily reparses the
-    ;; buffer when any elisp code makes an API call that accesses the
-    ;; `treesit' parse tree (e.g. by calling
-    ;; `treesit-parser-root-node').
-    ;;
-    ;; Since we need to trigger the `treesit' reparse ourselves by
-    ;; making `treesit' API calls, we set up another hook for
-    ;; `pre-redisplay-functions' to do that on a repeating basis.  In
-    ;; addition, we call `elisp-tred--force-treesit-reparse' below to
-    ;; perform the initial `treesit' parse after enabling
-    ;; `elisp-tred-overlay-mode'.
-	(treesit-parser-add-notifier parser #'elisp-tred--treesit-change-hook)
+    ;; Set up hooks for updating Elisp-Tred overlays (e.g. tree
+    ;; guides) when the user edits the buffer.
+    (treesit-parser-add-notifier parser #'elisp-tred--treesit-change-hook)
     (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
     (add-hook 'before-change-functions #'elisp-tred--before-change-hook nil t)
     (add-hook 'after-change-functions #'elisp-tred--after-change-hook nil t)
     (setq elisp-tred--update-change-tracker-id (track-changes-register nil))
+    ;; Create initial Elisp-Tred overlays for the entire buffer.
     (let ((root-node (treesit-parser-root-node parser)))
       (elisp-tred--create-overlays root-node nil))))
 
