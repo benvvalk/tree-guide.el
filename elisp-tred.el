@@ -105,16 +105,24 @@ Emacs is restarted."
   (unless (treesit-ready-p 'elisptred)
     (user-error "Failed to load elisp-tred grammar (buffer too large?)"))
   (let ((parser (treesit-parser-create 'elisptred (current-buffer) t)))
-    ;; Set up hooks for updating Elisp-Tred overlays (e.g. tree
-    ;; guides) when the user edits the buffer.
-    (treesit-parser-add-notifier parser #'elisp-tred--treesit-change-hook)
-    (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
-    (add-hook 'before-change-functions #'elisp-tred--before-change-hook nil t)
-    (add-hook 'after-change-functions #'elisp-tred--after-change-hook nil t)
-    (setq elisp-tred--update-change-tracker-id (track-changes-register nil))
-    ;; Create initial Elisp-Tred overlays for the entire buffer.
-    (let ((root-node (treesit-parser-root-node parser)))
-      (elisp-tred--create-overlays root-node nil))))
+	;; Don't create or update Elisp-Tred overlays (e.g. tree guides)
+	;; in the shadow buffer.
+    ;;
+    ;; We don't have any way to keep the Elisp-Tred overlays in the
+	;; shadow buffer up-to-date with respect to user edits, because
+	;; the shadow buffer does not have its own shadow buffer (that
+	;; would be infinite recursion).
+    (unless elisp-tred--update-shadow-buffer-p
+      ;; Set up hooks for updating Elisp-Tred overlays (e.g. tree
+      ;; guides) when the user edits the buffer.
+      (treesit-parser-add-notifier parser #'elisp-tred--treesit-change-hook)
+      (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
+      (add-hook 'before-change-functions #'elisp-tred--before-change-hook nil t)
+      (add-hook 'after-change-functions #'elisp-tred--after-change-hook nil t)
+      (setq elisp-tred--update-change-tracker-id (track-changes-register nil))
+      ;; Create initial Elisp-Tred overlays for the entire buffer.
+      (let ((root-node (treesit-parser-root-node parser)))
+        (elisp-tred--create-overlays root-node nil)))))
 
 (defun elisp-tred--force-treesit-reparse ()
     "Force `treesit' to reparse the buffer.
@@ -1234,6 +1242,55 @@ Passed to `track-changes-fetch' to retrieve a description of the
 latest changes the user has made to the buffer (if any), so we can
 Elisp-Tred tree structure in sync with the elisp code.")
 
+(defvar-local elisp-tred--update-shadow-buffer nil
+  "The shadow buffer for this Elisp-Tred buffer. The shadow buffer is
+a hidden clone of an Elisp-Tred buffer that is used for
+change-tracking.
+
+The text content of the shadow buffer is kept in sync with the main
+buffer, minus the user's most recent buffer edit (as captured by the
+built-in Track-Changes library).
+
+You can determine if the current buffer is the main Elisp-Tred or the
+shadow buffer by checking the value of
+`elisp-tred--update-shadow-buffer-p'.  You can also visually
+distinguish the main buffer from the shadow buffer, because the shadow
+buffer does not have any overlays (e.g. tree guides).")
+
+(defvar-local elisp-tred--update-shadow-buffer-p nil
+  "Non-nil if this buffer is a shadow buffer. The shadow buffer is a
+hidden clone of an Elisp-Tred buffer that is used for
+change-tracking.")
+
+(defun elisp-tred--update-shadow-buffer-init ()
+  "Create the shadow buffer for the current Elisp-Tred buffer.
+
+The shadow buffer is a hidden clone of an Elisp-Tred buffer that is
+used for change-tracking."
+  ;; prevent infinite recursion (don't create a shadow buffer
+  ;; for the shadow buffer)
+  (unless elisp-tred--update-shadow-buffer-p
+    (let* ((buffer (current-buffer))
+          (buffer-content (buffer-string))
+          (buffer-mode major-mode)
+          (shadow-buffer-name (format "*elisp-tred-shadow: %s*" (buffer-name)))
+          (shadow-buffer (get-buffer-create shadow-buffer-name t)))
+	 (with-current-buffer shadow-buffer
+       (erase-buffer)
+       (insert buffer-content)
+	   (funcall buffer-mode)
+       (setq elisp-tred--update-shadow-buffer-p t)
+       (elisp-tred-mode))
+     (setq elisp-tred--update-shadow-buffer shadow-buffer))))
+
+(defun elisp-tred--update-shadow-buffer-teardown ()
+  "Destroy the shadow buffer for the current Elisp-Tred buffer.
+
+The shadow buffer is a hidden clone of an Elisp-Tred buffer that is
+used for change-tracking."
+  (when elisp-tred--update-shadow-buffer
+	(kill-buffer elisp-tred--update-shadow-buffer)))
+
 (defun elisp-tred--update-range-get ()
   "Return the buffer range for which elisp-tred overlays need to be
 updated, after the user's most recent buffer edit(s).
@@ -1490,6 +1547,7 @@ nothing."
       (set (make-local-variable var) saved-value))))
 
 (defun elisp-tred--mode-init ()
+  (elisp-tred--update-shadow-buffer-init)
   (elisp-tred--treesit-init)
   ;; save user's buffer-local vars before modifying
   (elisp-tred--mode-local-var-save 'truncate-lines)
@@ -1503,6 +1561,7 @@ nothing."
   "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
 and restore `visual-line-mode' to its original value before enabling
 `elisp-tred-mode'."
+  (elisp-tred--update-shadow-buffer-teardown)
   (elisp-tred--remove-all-overlays-in-buffer)
   (elisp-tred--treesit-teardown)
   ;; restore user's buffer-local vars
