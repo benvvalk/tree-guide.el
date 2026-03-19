@@ -115,10 +115,7 @@ Emacs is restarted."
     (unless elisp-tred--update-shadow-buffer-p
       ;; Set up hooks for updating Elisp-Tred overlays (e.g. tree
       ;; guides) when the user edits the buffer.
-      (treesit-parser-add-notifier parser #'elisp-tred--treesit-change-hook)
       (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
-      (add-hook 'before-change-functions #'elisp-tred--before-change-hook nil t)
-      (add-hook 'after-change-functions #'elisp-tred--after-change-hook nil t)
       (setq elisp-tred--update-change-tracker-id (track-changes-register nil))
       ;; Create initial Elisp-Tred overlays for the entire buffer.
       (let ((root-node (treesit-parser-root-node parser)))
@@ -149,10 +146,7 @@ e.g. by calling `treesit-parser-root-node'."
 all treesit-related hook functions."
   (when-let ((parsers (elisp-tred--treesit-parsers)))
     (dolist (parser parsers)
-      (treesit-parser-remove-notifier parser #'elisp-tred--treesit-change-hook)
       (remove-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay t)
-      (remove-hook 'before-change-functions #'elisp-tred--before-change-hook t)
-      (remove-hook 'after-change-functions #'elisp-tred--after-change-hook t)
       (when elisp-tred--update-change-tracker-id
         (track-changes-unregister elisp-tred--update-change-tracker-id))
       (treesit-parser-delete parser))))
@@ -1218,23 +1212,6 @@ treesit nodes (e.g. `defun', `defmacro') that overlap [BEG, END]."
 
 ;;; Live updates during editing
 
-(defvar-local elisp-tred--update-range-before-change nil
-  "The union of all buffer change ranges calculated in
-`elisp-tred--before-change-hook' invocations, since we last updated
-the elisp-tred overlays.")
-
-(defvar-local elisp-tred--update-range-after-change nil
-  "The union of all buffer change ranges calculated in
-`elisp-tred--after-change-hook' invocations, since we last updated
-the elisp-tred overlays.")
-
-(defvar-local elisp-tred--update-chars-delta 0
-  "The net number of characters that were added/removed from the
-buffer, since we last updated the elisp-tred overlays.
-
-Negative values indicate number of characters removed and
-positive values indicate number of characters added.")
-
 (defvar-local elisp-tred--update-change-tracker-id nil
   "The change tracker ID returned by `track-changes-register'.
 
@@ -1291,47 +1268,115 @@ used for change-tracking."
   (when elisp-tred--update-shadow-buffer
 	(kill-buffer elisp-tred--update-shadow-buffer)))
 
-(defun elisp-tred--update-range-get ()
+(defun elisp-tred--update-shadow-buffer-apply-change (beg end before)
+  "Apply a buffer edit to the shadow buffer, as described by the
+following arguments:
+
+- BEG: the start position of the changed text END: the end position of
+- the changed text BEFORE: a string containing the previous text
+- content of the (BEG, END) range
+
+We call this function to re-synchronize the shadow buffer after
+applying a change in the main Elisp-Tred buffer."
+  (let ((after (buffer-substring-no-properties beg end)))
+    (with-current-buffer elisp-tred--update-shadow-buffer
+      (goto-char beg)
+	  (delete-char (length before))
+      (insert after))))
+
+(defun elisp-tred--update-range-calculate (change)
   "Return the buffer range for which elisp-tred overlays need to be
-updated, after the user's most recent buffer edit(s).
+updated, in response to the user's most recent buffer edit, as
+described by CHANGE.
 
-Determing the correct/minimal update range is a challenging
-problem. The trickiest cases occur when the user performs an edit that
-results in unbalanced parentheses (e.g. adding/deleting a single
-paren), which can potentially change the tree structure for entire
-rest of the buffer.
+CHANGE is a list consisting of:
 
-My current approach for determining the update range is:
+(1) BEG, the start position of the changed text
+(2) END, the end position of the changed text
+(3) BEFORE, a string containing the previous text content of the (BEG,
+END) range
 
-(1) Take the range passed to `elisp-tred--before-change-hook' (called
-via `before-change-functions') and extend it to the range of the
-overlapping top-level treesit node(s) (e.g. `defun', `defvar',
-etc.). Record the extended range in
-`elisp-tred--update-range-before-change'.
-(2) Take the range passed to `elisp-tred--after-change-hook' (called
-via `after-change-functions') and extend it to the range of the
-overlapping top level treesit node(s) (e.g. `defun', `defvar',
-etc.). Record the extended range in
-`elisp-tred--update-range-after-change'.
-(3) Take the union of the ranges from steps (1) and (2).
-(4) Clamp the range from step (3) to beginning of the range from
-step (1)."
-  ;; update the before-change range to reflect the number of
-  ;; characters added/removed during the user's most
-  ;; recent buffer edit(s)
-  (when elisp-tred--update-range-before-change
-    (let* ((beg (car elisp-tred--update-range-before-change))
-           (end (cdr elisp-tred--update-range-before-change))
-           (end-new (max beg (+ end elisp-tred--update-chars-delta))))
-      (setq elisp-tred--update-range-before-change (cons beg end-new))))
-  (let ((union-range (elisp-tred--range-union elisp-tred--update-range-before-change
-                                              elisp-tred--update-range-after-change)))
-	(cons (car elisp-tred--update-range-before-change) (cdr union-range))))
+The purpose of the updating the Elisp-Tred overlays is to ensure that
+the structure of the Elisp-Tred tree remains in sync with the
+structure of the elisp code.
 
-(defun elisp-tred--update-range-reset ()
-  (setq elisp-tred--update-range-before-change nil)
-  (setq elisp-tred--update-range-after-change nil)
-  (setq elisp-tred--update-chars-delta 0))
+Determining the correct/minimal buffer range for updating the
+Elisp-Tred overlays is a challenging problem. The trickiest cases
+occur when the user performs an edit that results in unbalanced
+parentheses (e.g. adding/deleting a single paren), which in certain
+cases can change the tree structure for entire rest of the buffer,
+i.e. from the first modified character to the end of the buffer. It
+really helps to think about some small examples to understand
+this. For example, consider what happens when we delete the closing
+paren after the `b' in the following list:
+
+`(a (b) c)'
+
+Initially, the tree looks like:
+
+╰─ (a
+   ├─ (b)
+   ╰─ c)
+
+But after deleing closing paren, resulting in `(a (b c)', the tree
+looks like:
+
+╰─ (a
+   ╰─ (b
+      ╰─ c)
+
+To help with the calculation of the update range, Elisp-Tred's
+maintains a \"shadow buffer\", which is an exact clone of the main
+buffer, but without the user's most recent edit applied. This
+allows us to easily compare the state of the treesit parse tree
+before and after the user's edit.
+
+To simplify the calculation of the buffer update range, we always
+update top-level elisp forms (e.g. `defun', `defvar', etc.) as atomic
+units. In other words, each top-level elisp form will either be fully
+included or fully excluded from the buffer update region, and never
+anything in between. This isn't necessarily optimal, but it helps make
+the code easier to understand and reason about.
+
+The current algorithm to compute the buffer update range is as
+follows:
+
+(1) Calculate `top-level-nodes-before', the list of top-level
+treesit nodes that overlap CHANGE in the shadow buffer.
+(2) Calculate `top-level-nodes-after', the list of top-level
+treesit nodes that overlap CHANGE in the main Elisp-Tred buffer.
+(3) Calculate `update-range-before', the buffer range that corresponds
+to `top-level-nodes-before' in the shadow buffer.
+(4) Calculate `update-range-before-adjusted', which is
+`update-range-before', but with the end position updated to reflect
+the net number of characters that were added/deleted during the user's
+most recent edit operation. In other words, adjust the region so that
+it matches the main Elisp-Tred buffer, rather than the shadow buffer.
+(5) Calculate `update-range-after', the buffer range that corresponds
+to `top-level-nodes-after' in the main Elisp-Tred buffer.
+(6) Calculate `update-range-union', the union of `update-range-before'
+and `update-range-after'.
+(7) Return `update-range-union', but with the start position
+clamped to the start position of CHANGE."
+  (let* ((beg (nth 0 change))
+         (end (nth 1 change))
+         (before (nth 2 change))
+         (top-level-nodes-before
+          (with-current-buffer elisp-tred--update-shadow-buffer
+            (elisp-tred--treesit-top-level-nodes-overlapping-range beg (+ beg (length before)))))
+         (top-level-nodes-after
+          (elisp-tred--treesit-top-level-nodes-overlapping-range beg end))
+         (update-range-before (elisp-tred--treesit-nodes-range-union top-level-nodes-before))
+         (update-range-before-beg (car update-range-before))
+         (update-range-before-end (cdr update-range-before))
+         (change-chars-delta (- (- end beg) (length before)))
+         (update-range-before-adjusted (cons update-range-before-beg (+ update-range-before-end change-chars-delta)))
+         (update-range-after (elisp-tred--treesit-nodes-range-union top-level-nodes-after))
+		 (update-range-union (elisp-tred--range-union update-range-before-adjusted update-range-after)))
+    ;; Clamp update region to beginning of CHANGE.
+	;; A buffer edit can only affect the tree structure in buffer
+	;; region *after* the edit position, not before.
+    (cons beg (cdr update-range-union))))
 
 (defvar-local elisp-tred--pre-redisplay-tick nil
   "The last `buffer-chars-modified-tick' that we've processed.  This
@@ -1358,17 +1403,23 @@ END) range"
          (fetch-changes-callback #'elisp-tred--update-track-changes-fetch-callback))
 	(track-changes-fetch change-tracker-id fetch-changes-callback)))
 
-(defun elisp-tred--update ()
+(defun elisp-tred--update (change)
   "Update elisp-tred overlays so the tree structure reflects the
 user's most recent edits to the buffer."
-  (track-changes-fetch elisp-tred--update-change-tracker-id #'elisp-tred--update-track-changes-fetch-callback)
-  (when-let* ((range-to-update (elisp-tred--update-range-get))
-              (beg (car range-to-update))
-              (end (cdr range-to-update))
-              (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
+  ;; prevent infinite recursion
+  (message "change: %s" change)
+  (let* ((change-beg (nth 0 change))
+         (change-end (nth 1 change))
+         (change-before (nth 2 change))
+         (update-range (elisp-tred--update-range-calculate change))
+         (update-beg (car update-range))
+         (update-end (cdr update-range))
+         (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
     (dolist (node nodes-to-update)
       (elisp-tred--update-overlays node))
-    (elisp-tred--update-range-reset)))
+    ;; re-sync shadow buffer to main buffer, in preparation
+    ;; for user's next edit
+    (elisp-tred--update-shadow-buffer-apply-change change-beg change-end change-before)))
 
 (defun elisp-tred--pre-redisplay (&rest _)
   "Force reparse of treesit parser, which will trigger notifiers.
@@ -1376,39 +1427,9 @@ This function is added to `pre-redisplay-functions' to ensure that
 the parse tree is updated before redisplay, similar to how treesit.el
 handles font-lock updates."
   (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
-    (elisp-tred--update)
+    (when-let* ((change (elisp-tred--update-change-get)))
+      (elisp-tred--update change))
     (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
-
-(defun elisp-tred--treesit-change-hook (ranges parser)
-  (cl-assert (eq (treesit-parser-language parser) 'elisptred))
-  (dolist (range ranges)
-    (let* ((beg (car range))
-           (end (cdr range)))
-      (message "treesit-change-hook: range: (%s . %s)" beg end))))
-
-(defun elisp-tred--before-change-hook (beg end)
-  (message "before-change-hook: (%s, %s)" beg end)
-  (let ((range (elisp-tred--range-extend-to-top-level-treesit-nodes beg end)))
-    (setq elisp-tred--update-range-before-change
-          (elisp-tred--range-union elisp-tred--update-range-before-change range))
-    (message "before-change-range: (%s, %s)"
-             (car elisp-tred--update-range-before-change)
-             (cdr elisp-tred--update-range-before-change))))
-
-(defun elisp-tred--after-change-hook (beg end before-change-length)
-  (message "after-change-hook: (%s, %s), before-change-length: %s" beg end before-change-length)
-  (let* ((after-change-length (- end beg))
-         (chars-delta (- after-change-length before-change-length))
-         (range (elisp-tred--range-extend-to-top-level-treesit-nodes beg end)))
-    (message "chars-delta: %s" chars-delta)
-    (setq elisp-tred--update-range-after-change
-          (elisp-tred--range-union elisp-tred--update-range-after-change range))
-    (message "after-change-range: (%s, %s)"
-             (car elisp-tred--update-range-after-change)
-             (cdr elisp-tred--update-range-after-change))
-    (setq elisp-tred--update-chars-delta
-          (+ elisp-tred--update-chars-delta chars-delta))
-    (message "after-change-chars-delta: %s" elisp-tred--update-chars-delta)))
 
 (defun elisp-tred--update-track-changes-fetch-callback (beg end before)
   (message "track-changes-fetch: (%s, %s) (before: \"%s\")" beg end before)
