@@ -961,8 +961,9 @@ length limit specified by `elisp-tred-max-label-length'."
 
 (defun elisp-tred--set-node-folded (node folded)
   "Set folded state of treesit node NODE."
-  (elisp-tred--remove-overlays node)
-  (elisp-tred--create-overlays node folded))
+  (when (not (eq (elisp-tred--folded-p node) folded))
+    (elisp-tred--remove-overlays node)
+    (elisp-tred--create-overlays node folded)))
 
 (defun elisp-tred--set-current-line-folded (folded)
   "Set folded state of treesit node on current line."
