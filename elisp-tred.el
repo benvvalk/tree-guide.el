@@ -194,6 +194,14 @@ treesit node for the list."
         (node-end (treesit-node-end node)))
     (elisp-tred--ranges-overlap-p node-beg node-end beg end)))
 
+(defun elisp-tred--treesit-top-level-node-for-pos (pos)
+  "Return the treesit node for the top-level elisp form (e.g. `defun',
+`defvar') that contains buffer position POS.
+
+This function will return nil if POS is located within the whitespace
+between top-level elisp forms."
+  (car (elisp-tred--treesit-top-level-nodes-overlapping-range pos pos)))
+
 (defun elisp-tred--treesit-top-level-nodes-overlapping-range (beg end)
   "Return a list of top level treesit nodes overlapping the buffer
 range [BEG, END].
@@ -830,6 +838,7 @@ are hidden and an ellipsis (`...') is shown instead."
   (let ((overlay (make-overlay beg end nil t)))
     (overlay-put overlay 'category 'elisp-tred-fold)
     (overlay-put overlay 'display "...")
+    (overlay-put overlay 'cursor-sensor-functions (list #'elisp-tred--fold-cursor-sensor-function))
     overlay))
 
 (defun elisp-tred--first-newline-pos (node)
@@ -969,6 +978,17 @@ length limit specified by `elisp-tred-max-label-length'."
   "Set folded state of treesit node on current line."
   (when-let ((node (elisp-tred--node-for-current-line)))
     (elisp-tred--set-node-folded node folded)))
+
+(defun elisp-tred--fold-cursor-sensor-function (_window _old-pos direction)
+  "Automatically unfold the treesit node for a top-level elisp form
+(e.g. `defun', `defvar') when the cursor enters folded text is hidden.
+
+This function is triggered by `cursor-sensor-functions' text property.
+For an explanation of the arguments, see the documentation for
+`cursor-sensor-mode'."
+  (when (eq direction 'entered)
+    (when-let ((top-level-node (elisp-tred--treesit-top-level-node-for-pos (point))))
+      (elisp-tred--set-node-folded top-level-node nil))))
 
 (defun elisp-tred-fold-toggle-current-line ()
   "Toggle the folded/unfolded state of the current line."
@@ -1661,15 +1681,21 @@ binding, then this function does nothing."
      (push (cons var (symbol-value var))
            elisp-tred--mode-local-vars-saved))))
 
+(defun elisp-tred--mode-local-var-saved-value (var)
+  "Return the value of buffer-local variable VAR that was saved by
+`elisp-tred--mode-local-var-save', or nil if the VAR was never
+saved by `elisp-tred--mode-local-var-save'."
+  (when-let ((binding (assoc var elisp-tred--mode-local-vars-saved)))
+    (cdr binding)))
+
 (defun elisp-tred--mode-local-var-restore (var)
   "Restore the value of buffer-local variable VAR from
 `elisp-tred--mode-local-vars-saved'. If VAR was not previously saved by
 calling `elisp-tred--mode-local-var-save' on VAR, then this function does
 nothing."
   (kill-local-variable var)
-  (when-let ((binding (assoc var elisp-tred--mode-local-vars-saved)))
-    (let ((saved-value (cdr binding)))
-      (set (make-local-variable var) saved-value))))
+  (let ((saved-value (elisp-tred--mode-local-var-saved-value var)))
+    (set (make-local-variable var) saved-value)))
 
 (defun elisp-tred--mode-init ()
   (elisp-tred--update-shadow-buffer-init)
@@ -1677,10 +1703,12 @@ nothing."
   ;; save user's buffer-local vars before modifying
   (elisp-tred--mode-local-var-save 'truncate-lines)
   (elisp-tred--mode-local-var-save 'truncate-partial-width-windows)
+  (elisp-tred--mode-local-var-save 'cursor-sensor-mode)
   ;; disable line-wrapping, because it makes
   ;; reading and navigating the tree more difficult
   (setq-local truncate-lines t)
-  (setq-local truncate-partial-width-windows t))
+  (setq-local truncate-partial-width-windows t)
+  (cursor-sensor-mode))
 
 (defun elisp-tred--mode-teardown ()
   "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
@@ -1691,7 +1719,9 @@ and restore `visual-line-mode' to its original value before enabling
   (elisp-tred--treesit-teardown)
   ;; restore user's buffer-local vars
   (elisp-tred--mode-local-var-restore 'truncate-lines)
-  (elisp-tred--mode-local-var-restore 'truncate-partial-width-windows))
+  (elisp-tred--mode-local-var-restore 'truncate-partial-width-windows)
+  (unless (elisp-tred--mode-local-var-saved-value cursor-sensor-mode)
+    (cursor-sensor-mode -1)))
 
 (define-minor-mode elisp-tred-mode
   "Display and edit elisp code as a tree."
