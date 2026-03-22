@@ -409,13 +409,13 @@ halted early. Otherwise, the traversal continues."
                (if (re-search-forward elisp-tred--whitespace-regex gap-end t)
                    (let ((whitespace-start (match-beginning 0))
                          (whitespace-end (match-end 0)))
-                     ;; Whitepace should extend to start of first child.
+                     ;; Whitespace should extend to start of first child.
                      (cl-assert (eq whitespace-end gap-end))
                      (when (< gap-start whitespace-start)
 				       (unless (funcall visitor-func 'opening-chars node gap-start whitespace-start)
                          (throw 'done nil)))
                      (when (< whitespace-start gap-end)
-                       (unless (funcall visitor-func 'whitespace nil whitepace-start gap-end)
+                       (unless (funcall visitor-func 'whitespace nil whitespace-start gap-end)
                          (throw 'done nil))))
                  ;; else: no whitespace found between parent and first child
                  (unless (funcall visitor-func 'opening-chars node gap-start gap-end)
