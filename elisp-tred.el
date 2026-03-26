@@ -572,7 +572,7 @@ before POS."
     (substring-no-properties guide-string)))
 
 (defun elisp-tred--create-tree-guide-overlay-at (beg end folded guide-string)
-  (let ((overlay (make-overlay beg end nil t)))
+  (let ((overlay (make-overlay beg end)))
     (overlay-put overlay 'category 'elisp-tred-guide)
     (overlay-put overlay 'evaporate t)
     (overlay-put overlay 'elisp-tred-folded folded)
