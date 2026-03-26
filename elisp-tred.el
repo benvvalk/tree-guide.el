@@ -5,7 +5,7 @@
 (require 'track-changes)
 (require 'treesit)
 
-(defconst elisp-tred-grammar-version "0.0.1"
+(defconst elisp-tred-grammar-version "1.0.0"
   "The version of the `tree-sitter-elisptred' grammar that is intended
 to be used with this version elisp-tred.")
 
@@ -321,6 +321,18 @@ variable declarations for a `let' form."
       (and (string= parent-type "list")
            (member child0-text '("let" "let*" "if-let" "if-let*" "when-let" "when-let*"))))))
 
+(defun elisp-tred--treesit-sexp-p (node)
+  "Return non-nil if treesit node NODE is a sexp (symbolic
+expression).
+
+Generally, we use this predicate to filter out whitespace nodes
+(i.e. treesit node types `newline' and `horizontal_whitespace') using
+`treesit-filter-child'. The whitespace nodes are useful for certain
+operations (e.g. whitespace formatting), but in many cases we want
+write the code as if the whitespace nodes don't exist."
+  (let ((node-type (treesit-node-type node)))
+    (not (member node-type '("horizontal_whitespace" "newline")))))
+
 (defun elisp-tred--treesit-node-quoted-or-unquoted-p (node)
   "Return non-nil if treesit node NODE is a quoted or
 unquoted elisp form.
@@ -351,8 +363,8 @@ structure of the treesit parse tree."
           (node2-type (treesit-node-type node2)))
       (when (not (string= node1-type node2-type))
         (throw 'done t))
-	  (let ((node1-children (treesit-node-children node1 t))
-            (node2-children (treesit-node-children node2 t)))
+	  (let ((node1-children (treesit-filter-child node1 #'elisp-tred--treesit-sexp-p t))
+            (node2-children (treesit-filter-child node2 #'elisp-tred--treesit-sexp-p t)))
         (elisp-tred--treesit-nodes-structural-diff-p node1-children node2-children)))))
 
 (defun elisp-tred--treesit-nodes-structural-diff-p (nodes1 nodes2)
@@ -396,7 +408,7 @@ VISITOR-FUNC is invoked with the following arguments:
 If the return value of VISITOR-FUNC is nil, the traversal will be
 halted early. Otherwise, the traversal continues."
   (catch 'done
-    (if-let ((children (treesit-node-children node t)))
+    (if-let ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
        (progn
          ;; Visit opening chars for parent, whitespace between parent
          ;; and first child (if any), and first child
@@ -512,7 +524,7 @@ its parent node.
 Note: If NODE has no parent treesit node (i.e. it is the root node of
 the treesit parse tree), this function will return `nil'."
   (when-let* ((parent (treesit-node-parent node))
-              (siblings (treesit-node-children parent t)))
+              (siblings (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t)))
     (treesit-node-eq node (car siblings))))
 
 (defun elisp-tred--last-child-p (node)
@@ -522,7 +534,7 @@ of its parent node.
 Note: If NODE has no parent treesit node (i.e. it is the root node of
 the treesit parse tree), this function will return `nil'."
   (when-let* ((parent (treesit-node-parent node))
-              (siblings (treesit-node-children parent t)))
+              (siblings (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t)))
     (treesit-node-eq node (car (last siblings)))))
 
 (defun elisp-tred--tree-guide-flags (node &optional flags)
@@ -710,7 +722,7 @@ to construct the tree guide lines."
   (when (elisp-tred--tree-guide-p node)
     (elisp-tred--create-tree-guide-overlays-for-node node folded guide-flags))
   (unless folded
-    (let* ((children (treesit-node-children node t)))
+    (let* ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
      (dolist (child children)
        (let* ((guide-flag (not (elisp-tred--last-child-p child)))
               (guide-flags (append guide-flags (list guide-flag))))
@@ -777,7 +789,7 @@ contains only whitespace characters."
 within a string or comment (e.g. indentation and newlines). We want
 to hide all such whitespace so that we display the tree structure in a
 consistent and predictable manner."
-  (when-let ((children (treesit-node-children node t)))
+  (when-let ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
     (let* ((first-child (car children))
            (gap-start (treesit-node-start node))
            (gap-end (treesit-node-start first-child))
@@ -873,7 +885,7 @@ the first line is shown, followed by an ellipsis (`...')."
   (when (equal (treesit-node-type node) "string")
     (elisp-tred--create-fold-overlay-for-string node))
   (mapc #'elisp-tred--create-fold-overlays-for-strings
-      (treesit-node-children node t)))
+      (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
 
 (defun elisp-tred--fold-end-pos (node)
   "Return the position the last character we are allowed to hide
@@ -1005,7 +1017,7 @@ For an explanation of the arguments, see the documentation for
   (setq elisp-tred--fold-toggle-top-level-state (not elisp-tred--fold-toggle-top-level-state))
   ;; update fold overlays to match new state
   (let ((root-node (treesit-buffer-root-node 'elisptred)))
-    (dolist (top-level-node (treesit-node-children root-node t))
+    (dolist (top-level-node (treesit-filter-child root-node #'elisp-tred--treesit-sexp-p t))
       (elisp-tred--set-node-folded top-level-node elisp-tred--fold-toggle-top-level-state))))
 
 ;;; High-level overlay functions
