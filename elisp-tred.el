@@ -1337,17 +1337,22 @@ used for change-tracking."
   (when elisp-tred--update-shadow-buffer
 	(kill-buffer elisp-tred--update-shadow-buffer)))
 
-(defun elisp-tred--update-shadow-buffer-apply-change (beg end before)
-  "Apply a buffer edit to the shadow buffer, as described by the
-following arguments:
+(defun elisp-tred--update-shadow-buffer-apply-change (change)
+  "Apply a buffer edit to the shadow buffer, as described by CHANGE.
 
-- BEG: the start position of the changed text END: the end position of
-- the changed text BEFORE: a string containing the previous text
-- content of the (BEG, END) range
+CHANGE is a list consisting of:
+
+(1) BEG, the start position of the changed text
+(2) END, the end position of the changed text
+(3) BEFORE, a string containing the previous text content of the (BEG,
+END) range
 
 We call this function to re-synchronize the shadow buffer after
 applying a change in the main Elisp-Tred buffer."
-  (let ((after (buffer-substring-no-properties beg end)))
+  (let* ((beg (nth 0 change))
+         (end (nth 1 change))
+         (before (nth 2 change))
+         (after (buffer-substring-no-properties beg end)))
     (with-current-buffer elisp-tred--update-shadow-buffer
       (goto-char beg)
 	  (delete-char (length before))
@@ -1495,10 +1500,7 @@ END) range"
 user's most recent edits to the buffer."
   ;; prevent infinite recursion
   (message "change: %s" change)
-  (let ((change-beg (nth 0 change))
-        (change-end (nth 1 change))
-		(change-before (nth 2 change))
-        (tree-structure-changed-p (elisp-tred--update-tree-structure-changed-p change)))
+  (let ((tree-structure-changed-p (elisp-tred--update-tree-structure-changed-p change)))
     ;; If the structure of the treesit parse tree hasn't changed,
     ;; don't update the Elisp-Tred overlays.
     ;;
@@ -1521,7 +1523,7 @@ user's most recent edits to the buffer."
           (elisp-tred--update-overlays node))))
     ;; re-sync shadow buffer to main buffer, in preparation
     ;; for user's next edit
-    (elisp-tred--update-shadow-buffer-apply-change change-beg change-end change-before)))
+    (elisp-tred--update-shadow-buffer-apply-change change)))
 
 (defun elisp-tred--pre-redisplay (&rest _)
   "Force reparse of treesit parser, which will trigger notifiers.
