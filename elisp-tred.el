@@ -116,7 +116,9 @@ Emacs is restarted."
       ;; Set up hooks for updating Elisp-Tred overlays (e.g. tree
       ;; guides) when the user edits the buffer.
       (add-hook 'pre-redisplay-functions #'elisp-tred--pre-redisplay nil t)
-      (setq elisp-tred--update-change-tracker-id (track-changes-register nil))
+      ;; We pass `ignore' here because we don't use the Track-Changes.
+	  ;; Instead, we check for pending changes in `elisp-tred--pre-redisplay'.
+      (setq elisp-tred--update-change-tracker-id (track-changes-register #'ignore))
       ;; Create initial Elisp-Tred overlays for the entire buffer.
       (let ((root-node (treesit-parser-root-node parser)))
         (elisp-tred--create-overlays root-node nil)))))
