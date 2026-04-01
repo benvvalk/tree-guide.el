@@ -272,26 +272,30 @@ a symbol name), as opposed to a nested type (e.g. a list, a vector)."
 (defun elisp-tred--treesit-node-defun-defmacro-defvar-name-p (node)
   "Return non-nil if treesit node NODE is the declared name for a
 function, macro, or variable."
-  (when (= (treesit-node-index node t) 1)
-    (when-let* ((parent (treesit-node-parent node))
-                (parent-type (treesit-node-type parent))
-                (child0 (treesit-node-child parent 0 t))
-                (child0-text (treesit-node-text child0 t)))
-	  (and (string= parent-type "list")
-           (member child0-text '("defun" "defmacro" "defvar" "defvar-local" "defcustom"))))))
+  (when-let* ((parent (treesit-node-parent node))
+              (parent-type (treesit-node-type parent))
+              (children (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t))
+              (child0 (nth 0 children))
+              (child0-text (treesit-node-text child0 t))
+              (child1 (nth 1 children)))
+	(and (treesit-node-eq node child1)
+         (string= parent-type "list")
+         (member child0-text '("defun" "defmacro" "defvar" "defvar-local" "defcustom")))))
 
 (defun elisp-tred--treesit-node-defun-defmacro-arglist-p (node)
   "Return non-nil if treesit node NODE is the argument list for
 a `defun' or `defmacro' declaration."
-  (when (= (treesit-node-index node t) 2)
-    (when-let* ((node-type (treesit-node-type node))
-                (parent (treesit-node-parent node))
-                (parent-type (treesit-node-type parent))
-                (child0 (treesit-node-child parent 0 t))
-                (child0-text (treesit-node-text child0 t)))
-	  (and (string= parent-type "list")
-           (string= node-type "list")
-           (member child0-text '("defun" "defmacro"))))))
+  (when-let* ((node-type (treesit-node-type node))
+              (parent (treesit-node-parent node))
+              (parent-type (treesit-node-type parent))
+              (children (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t))
+              (child0 (nth 0 children))
+              (child0-text (treesit-node-text child0 t))
+              (child2 (nth 2 children)))
+	(and (treesit-node-eq node child2)
+         (string= parent-type "list")
+         (string= node-type "list")
+         (member child0-text '("defun" "defmacro")))))
 
 (defun elisp-tred--treesit-node-defvar-atomic-value-p (node)
   "Return non-nil if treesit node NODE is the default variable value
@@ -299,13 +303,15 @@ in a `defvar'/`defvar-local'/`defcustom' declaration, and the value is
 an atomic type (e.g. a string, a float).
 
 Return nil if NODE is a non-atomic type (e.g. a list, a vector)."
-  (when (and (= (treesit-node-index node t) 2)
-             (elisp-tred--treesit-node-atom-p node))
+  (when (elisp-tred--treesit-node-atom-p node)
     (when-let* ((parent (treesit-node-parent node))
                 (parent-type (treesit-node-type parent))
-                (child0 (treesit-node-child parent 0 t))
-                (child0-text (treesit-node-text child0 t)))
-	  (and (string= parent-type "list")
+                (children (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t))
+                (child0 (nth 0 children))
+                (child0-text (treesit-node-text child0 t))
+                (child2 (nth 2 children)))
+	  (and (treesit-node-eq node child2)
+           (string= parent-type "list")
            (member child0-text '("defvar" "defvar-local" "defcustom"))))))
 
 (defun elisp-tred--treesit-node-defun-defmacro-arg-p (node)
@@ -315,13 +321,15 @@ Return nil if NODE is a non-atomic type (e.g. a list, a vector)."
 (defun elisp-tred--treesit-node-let-declarations-list-p (node)
   "Return non-nil if treesit node NODE is the list of
 variable declarations for a `let' form."
-  (when (= (treesit-node-index node t) 1)
-    (when-let* ((parent (treesit-node-parent node))
-                (parent-type (treesit-node-type parent))
-                (child0 (treesit-node-child parent 0 t))
-                (child0-text (treesit-node-text child0 t)))
-      (and (string= parent-type "list")
-           (member child0-text '("let" "let*" "if-let" "if-let*" "when-let" "when-let*"))))))
+  (when-let* ((parent (treesit-node-parent node))
+              (parent-type (treesit-node-type parent))
+              (children (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t))
+              (child0 (nth 0 children))
+              (child0-text (treesit-node-text child0 t))
+              (child1 (nth 1 children)))
+    (and (treesit-node-eq node child1)
+         (string= parent-type "list")
+         (member child0-text '("let" "let*" "if-let" "if-let*" "when-let" "when-let*")))))
 
 (defun elisp-tred--treesit-sexp-p (node)
   "Return non-nil if treesit node NODE is a sexp (symbolic
