@@ -31,7 +31,7 @@ QUOTED-ELISP-FORM."
     (with-current-buffer buffer
 	  (goto-char (point-min))
       (delete-char 1)
-      (elisp-tred--update-buffer))
+      (elisp-tred--update))
     ;; test buffer state after
     ;;
     ;; NOTE: unbalanced closing paren ')' appears on its own line

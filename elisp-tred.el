@@ -1495,12 +1495,15 @@ END) range"
          (fetch-changes-callback #'elisp-tred--update-track-changes-fetch-callback))
 	(track-changes-fetch change-tracker-id fetch-changes-callback)))
 
-(defun elisp-tred--update (change)
+(defun elisp-tred--update ()
   "Update elisp-tred overlays so the tree structure reflects the
 user's most recent edits to the buffer."
-  ;; prevent infinite recursion
-  (message "change: %s" change)
-  (let ((tree-structure-changed-p (elisp-tred--update-tree-structure-changed-p change)))
+  (when-let* ((change (elisp-tred--update-change-get))
+              (update-range (elisp-tred--update-range-calculate change))
+              (update-beg (car update-range))
+              (update-end (cdr update-range))
+              (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
+    (message "change: %s" change)
     ;; If the structure of the treesit parse tree hasn't changed,
     ;; don't update the Elisp-Tred overlays.
     ;;
@@ -1531,8 +1534,7 @@ This function is added to `pre-redisplay-functions' to ensure that
 the parse tree is updated before redisplay, similar to how treesit.el
 handles font-lock updates."
   (unless (eq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))
-    (when-let* ((change (elisp-tred--update-change-get)))
-      (elisp-tred--update change))
+    (elisp-tred--update)
     (setq elisp-tred--pre-redisplay-tick (buffer-chars-modified-tick))))
 
 (defun elisp-tred--update-track-changes-fetch-callback (beg end before)
