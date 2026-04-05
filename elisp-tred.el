@@ -1647,6 +1647,126 @@ multi-line string."
       (elisp-tred--render-elisp-form-to-buffer-append quoted-elisp-form (current-buffer))
       (elisp-tred--render-region-to-string (point-min) (point-max)))))
 
+(defun elisp-tred--render-overlay-diagram (&optional buffer)
+  "Render an ASCII diagram of overlays in BUFFER (or current buffer).
+
+The diagram shows:
+- A horizontal axis with buffer positions and characters
+- A row for `point' position
+- A row for each overlay category showing overlay spans
+- A row showing the `invisible' property state
+
+Each overlay is shown with '[' at its start position and ']' at its
+end position, with '-' characters filling the span.
+
+Returns the output buffer."
+  (let* ((source-buffer (or buffer (current-buffer)))
+         (source-buffer-name (buffer-name source-buffer))
+         (output-buffer-name (format "*overlays: %s*" source-buffer-name))
+         (output-buffer (get-buffer-create output-buffer-name)))
+    (with-current-buffer source-buffer
+      (let* ((num-chars (1- (point-max)))  ; Number of characters in buffer
+             (all-overlays (overlays-in (point-min) (point-max)))
+             (overlay-categories '())
+             (current-point (point)))
+
+        ;; Collect all unique overlay categories
+        (dolist (ov all-overlays)
+          (when-let ((cat (overlay-get ov 'category)))
+            (unless (member cat overlay-categories)
+              (push cat overlay-categories))))
+        (setq overlay-categories (nreverse overlay-categories))
+
+        (with-current-buffer output-buffer
+          (erase-buffer)
+
+          (let ((label-width 25))  ; Fixed width for row labels
+
+            ;; Row: buffer positions (between characters)
+            (insert (truncate-string-to-width "pos:" label-width nil ?\s))
+            ;; Position before first character
+            (insert "1")
+            ;; Positions between and after characters
+            (dotimes (i num-chars)
+              (let ((pos (+ i 2)))
+                (insert " ")
+                (if (< pos 10)
+                    (insert (number-to-string pos))
+                  (insert (number-to-string (mod pos 10))))))
+            (insert "\n")
+
+            ;; Row: buffer characters (with spaces between)
+            (insert (truncate-string-to-width "char:" label-width nil ?\s))
+            (insert " ")  ; Initial space to align with positions
+            (dotimes (i num-chars)
+              (let ((char (with-current-buffer source-buffer
+                            (char-after (1+ i)))))
+                (insert (if (or (not char) (eq char ?\n) (eq char ?\r) (eq char ?\t))
+                            "."
+                          (char-to-string char)))
+                (insert " ")))
+            (insert "\n")
+
+            ;; Row for each overlay category
+            (dolist (cat overlay-categories)
+              (let ((cat-name (symbol-name cat))
+                    (row (make-string (1+ (* 2 num-chars)) ?\s)))
+                ;; Truncate or pad category name to fixed width
+                (setq cat-name (truncate-string-to-width cat-name label-width nil ?\s))
+                (insert cat-name)
+
+                ;; Mark overlays in the row
+                (dolist (ov all-overlays)
+                  (when (eq (overlay-get ov 'category) cat)
+                    (let ((start (max (point-min) (overlay-start ov)))
+                          (end (min (point-max) (overlay-end ov))))
+                      (when (<= start end)
+                        ;; Convert buffer position to diagram position
+                        ;; Buffer pos N maps to diagram position 2*(N-1)
+                        (let ((diagram-start (* 2 (1- start)))
+                              (diagram-end (* 2 (1- end))))
+                          ;; Mark start position
+                          (when (and (>= start (point-min)) (<= start (point-max)))
+                            (aset row diagram-start ?\[))
+                          ;; Mark middle positions (skip every other position for spaces)
+                          (let ((i (+ diagram-start 2)))
+                            (while (< i diagram-end)
+                              (when (eq (aref row i) ?\s)
+                                (aset row i ?\-))
+                              (setq i (+ i 2))))
+                          ;; Mark end position
+                          (when (and (>= end (point-min)) (<= end (point-max)))
+                            (aset row diagram-end ?\])))))))
+
+                (insert row)
+                (insert "\n")))
+
+            ;; Row: invisible-p state
+            (insert (truncate-string-to-width "invisible-p:" label-width nil ?\s))
+            (dotimes (i (1+ num-chars))
+              (let ((pos (1+ i)))
+                (insert (if (with-current-buffer source-buffer
+                              (invisible-p pos))
+                            "I" ".")
+                        " ")))
+            (insert "\n")
+
+            ;; Row: point position
+            (insert (truncate-string-to-width "point:" label-width nil ?\s))
+            (dotimes (i (1+ num-chars))
+              (insert (if (= (1+ i) current-point) "^" " ") " "))
+            (insert "\n")))))
+    output-buffer))
+
+(defun elisp-tred-render-overlay-diagram ()
+  "Render and display an ASCII diagram of overlays in the current buffer.
+
+Creates a diagram showing buffer positions, characters, point location,
+overlay spans by category, and invisible-p state. The diagram is
+displayed in a buffer named \"*overlays: BUFFER-NAME*\"."
+  (interactive)
+  (pop-to-buffer (elisp-tred--render-overlay-diagram)))
+
 ;;; Evil integration
 ;;
 ;; Remap j/k and up/down arrows to move by visual lines rather than
