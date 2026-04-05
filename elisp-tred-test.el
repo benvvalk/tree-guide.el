@@ -42,3 +42,47 @@ QUOTED-ELISP-FORM."
       (concat "├─ a\n"
               "├─ b\n"
               "╰─ )")))))
+
+(ert-deftest elisp-tred--test-edit-append-char-to-variable ()
+  (let ((buffer (elisp-tred--test-buffer-create '(a b))))
+    ;; test buffer state before
+    (should
+     (string=
+      (elisp-tred--render-buffer-to-string buffer)
+      (concat "╰─ (a\n"
+              "   ╰─ b)")))
+	;; perform edit: delete open paren '('
+    (with-current-buffer buffer
+	  (goto-char 3)
+      (insert "a")
+      (elisp-tred--update))
+    ;; test buffer state after
+    ;;
+    ;; NOTE: unbalanced closing paren ')' appears on its own line
+    ;; because it is a treesit error node
+    (should
+     (string=
+      (elisp-tred--render-buffer-to-string buffer)
+      (concat "╰─ (aa\n"
+              "   ╰─ b)")))))
+
+(ert-deftest elisp-tred--test-edit-insert-newline ()
+  (let ((buffer (elisp-tred--test-buffer-create '(a b))))
+    ;; test buffer state before
+    (should
+     (string=
+      (elisp-tred--render-buffer-to-string buffer)
+      (concat "╰─ (a\n"
+              "   ╰─ b)")))
+	;; perform edit: delete open paren '('
+    (with-current-buffer buffer
+	  (goto-char 3)
+      (insert "\n")
+      (elisp-tred--update))
+    ;; test buffer state after
+    (should
+     (string=
+      (elisp-tred--render-buffer-to-string buffer)
+      (concat "╰─ (a\n"
+              "   ├─ \n"
+              "   ╰─ b)")))))

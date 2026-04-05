@@ -177,6 +177,14 @@ will return a nearby leaf node if there isn't an exact match."
     (when (eql node-pos pos)
       (elisp-tred--get-toplevel-node-with-same-start-pos node))))
 
+;(defun elisp-tred--treesit-node-next-sibling (node &optional sibling-predicate)
+;  (catch 'done
+;    (let ((current-sibling node))
+;      (while-let ((next-sibling (treesit-node-next-sibling current-sibling t)))
+;       (when (funcall sibling-predicate next-sibling)
+;         (throw 'done next-sibling))
+;       (setq current-sibling next-sibling)))))
+
 (defun elisp-tred--node-for-current-line ()
   "Return the largest treesit node for the current line.
 
@@ -215,7 +223,8 @@ as `defun', `defmacro', `defvar', etc."
          result)
     (while (and top-level-node
                 (elisp-tred--treesit-node-overlaps-range-p top-level-node beg end))
-      (push top-level-node result)
+      (when (elisp-tred--treesit-sexp-or-temporary-newline-p top-level-node)
+        (push top-level-node result))
       (setq top-level-node (treesit-node-next-sibling top-level-node t)))
     (nreverse result)))
 
@@ -343,6 +352,29 @@ write the code as if the whitespace nodes don't exist."
   (let ((node-type (treesit-node-type node)))
     (not (member node-type '("horizontal_whitespace" "newline")))))
 
+(defun elisp-tred--treesit-node-newline-p (node)
+  (string= (treesit-node-type node) "newline"))
+
+(defun elisp-tred--treesit-node-sexp-or-newline-p (node)
+  (or (elisp-tred--treesit-sexp-p node)
+	  (elisp-tred--treesit-node-newline-p node)))
+
+(defun elisp-tred--treesit-temporary-newline-p (node)
+  (when (elisp-tred--treesit-node-newline-p node)
+    (let ((beg (treesit-node-start node))
+          (end (treesit-node-end node)))
+      (not (elisp-tred--whitespace-region-hidden-p beg end)))))
+
+(defun elisp-tred--treesit-sexp-or-temporary-newline-p (node)
+  (or (elisp-tred--treesit-sexp-p node)
+	  (elisp-tred--treesit-temporary-newline-p node)))
+
+(defun elisp-tred--treesit-hidden-whitespace-after-temporary-newline-p (node)
+  (when-let* ((node-type (treesit-node-type node))
+              (prev-sibling (treesit-node-prev-sibling node)))
+    (and (string= node-type "horizontal_whitespace")
+         (elisp-tred--treesit-temporary-newline-p prev-sibling))))
+
 (defun elisp-tred--treesit-node-quoted-or-unquoted-p (node)
   "Return non-nil if treesit node NODE is a quoted or
 unquoted elisp form.
@@ -357,7 +389,7 @@ Examples:
               (parent-type (treesit-node-type parent)))
     (member parent-type '("quote" "unquote" "unquote_splice"))))
 
-(defun elisp-tred--treesit-node-structural-diff-p (node1 node2)
+(defun elisp-tred--treesit-node-structural-diff-p (node1 node2 node-predicate)
   "Return non-nil if treesit node NODE1 has a different structure than
 treesit NODE2.
 
@@ -372,12 +404,13 @@ structure of the treesit parse tree."
     (let ((node1-type (treesit-node-type node1))
           (node2-type (treesit-node-type node2)))
       (when (not (string= node1-type node2-type))
+        (message "type diff: node1=%s, node2=%s" node1-type node2-type)
         (throw 'done t))
-	  (let ((node1-children (treesit-filter-child node1 #'elisp-tred--treesit-sexp-p t))
-            (node2-children (treesit-filter-child node2 #'elisp-tred--treesit-sexp-p t)))
-        (elisp-tred--treesit-nodes-structural-diff-p node1-children node2-children)))))
+	  (let ((node1-children (treesit-filter-child node1 node-predicate t))
+            (node2-children (treesit-filter-child node2 node-predicate t)))
+        (elisp-tred--treesit-nodes-structural-diff-p node1-children node2-children node-predicate)))))
 
-(defun elisp-tred--treesit-nodes-structural-diff-p (nodes1 nodes2)
+(defun elisp-tred--treesit-nodes-structural-diff-p (nodes1 nodes2 &optional node-predicate)
   "Return non-nil if two lists of treesit nodes, NODES1 and NODES2,
 are structurally different.
 
@@ -390,8 +423,20 @@ they have the same treesit node types (e.g. `list') and have the same
 number of children, recursively. The comparison between individual
 pairs of nodes is done with
 `elisp-tred--treesit-node-structural-diff-p'."
+  (when (/= (length nodes1) (length nodes2))
+    (message "num-children diff: nodes1=%s (%s), nodes2=%s (%s)"
+             (length nodes1)
+             nodes1
+             (length nodes2)
+             nodes2))
   (or (/= (length nodes1) (length nodes2))
-      (cl-some #'elisp-tred--treesit-node-structural-diff-p nodes1 nodes2)))
+      (cl-some (lambda (node1 node2)
+                 (elisp-tred--treesit-node-structural-diff-p
+                  node1
+                  node2
+                  (or node-predicate #'elisp-tred--treesit-sexp-p)))
+               nodes1
+               nodes2)))
 
 (defun elisp-tred--treesit-traversal (node visitor-func)
   "For the buffer region corresponding to treesit node NODE,
@@ -537,14 +582,15 @@ the treesit parse tree), this function will return `nil'."
               (siblings (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t)))
     (treesit-node-eq node (car siblings))))
 
-(defun elisp-tred--last-child-p (node)
+(defun elisp-tred--last-child-p (node &optional node-predicate)
   "Return non-nil if the treesit node NODE is the last named child
 of its parent node.
 
 Note: If NODE has no parent treesit node (i.e. it is the root node of
 the treesit parse tree), this function will return `nil'."
-  (when-let* ((parent (treesit-node-parent node))
-              (siblings (treesit-filter-child parent #'elisp-tred--treesit-sexp-p t)))
+  (when-let* ((predicate (or node-predicate #'elisp-tred--treesit-sexp-or-temporary-newline-p t))
+              (parent (treesit-node-parent node))
+              (siblings (treesit-filter-child parent predicate t)))
     (treesit-node-eq node (car (last siblings)))))
 
 (defun elisp-tred--tree-guide-flags (node &optional flags)
@@ -579,11 +625,6 @@ about the purpose of the guide flags."
               (if last-flag
                   elisp-tred--guide-with-handle
                 elisp-tred--guide-with-handle-last)))))
-
-(defun elisp-tred--tree-guide-string (node)
-  (when (elisp-tred--tree-guide-p node)
-    (let ((guide-flags (elisp-tred--tree-guide-flags node)))
-      (concat "\n" (elisp-tred--tree-guide-flags-to-string guide-flags)))))
 
 (defun elisp-tred--tree-guide-string-at (&optional pos)
   "Copy the string of tree guide characters that appear immediately
@@ -636,6 +677,14 @@ for each line, but we only show a handle for the first line."
         ;; else: not a multi-line string
         (elisp-tred--create-tree-guide-overlay-at start end folded (concat newline-prefix guide-string-line0))))))
 
+(defun elisp-tred--create-tree-guide-overlay-for-newline (node guide-string)
+  (let* ((beg (treesit-node-start node))
+         (end (treesit-node-end node))
+         (overlay (make-overlay beg end nil t)))
+    (overlay-put overlay 'category 'elisp-tred-guide)
+    (overlay-put overlay 'evaporate t)
+    (overlay-put overlay 'after-string guide-string)))
+
 (defun elisp-tred--create-tree-guide-overlays-for-node (node folded guide-flags)
   "Insert the tree guide overlay at the beginning of the line
 for treesit node NODE. "
@@ -644,9 +693,10 @@ for treesit node NODE. "
            (start (treesit-node-start node))
            (end (treesit-node-end node))
            (newline-prefix (unless (elisp-tred--treesit-node-first-in-buffer-p node) "\n")))
-     (if (equal node-type "string")
-         (elisp-tred--create-tree-guide-overlays-for-string node folded guide-flags)
-       (elisp-tred--create-tree-guide-overlay-at start end folded (concat newline-prefix guide-string))))))
+     (pcase node-type
+       ("string" (elisp-tred--create-tree-guide-overlays-for-string node folded guide-flags))
+       ("newline" (elisp-tred--create-tree-guide-overlay-for-newline node guide-string))
+       (_ (elisp-tred--create-tree-guide-overlay-at start end folded (concat newline-prefix guide-string)))))))
 
 (defun elisp-tred--tree-guide-overlay (node)
   "Return the tree guide overlay for treesit node NODE, or nil if NODE
@@ -732,11 +782,22 @@ to construct the tree guide lines."
   (when (elisp-tred--tree-guide-p node)
     (elisp-tred--create-tree-guide-overlays-for-node node folded guide-flags))
   (unless folded
-    (let* ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
+    (let* ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-or-temporary-newline-p t)))
      (dolist (child children)
        (let* ((guide-flag (not (elisp-tred--last-child-p child)))
               (guide-flags (append guide-flags (list guide-flag))))
          (elisp-tred--create-tree-guide-overlays child folded guide-flags))))))
+
+(defun elisp-tred--tree-guide-overlays-remove (node)
+  (let ((beg (treesit-node-start node))
+        (end (treesit-node-end node)))
+    (remove-overlays beg end 'category 'elisp-tred-guide)))
+
+(defun elisp-tred--tree-guide-overlays-update (node)
+  (elisp-tred--tree-guide-overlays-remove node)
+  (let ((folded-p (elisp-tred--folded-p node))
+        (guide-flags (elisp-tred--tree-guide-flags node)))
+    (elisp-tred--create-tree-guide-overlays node folded-p guide-flags)))
 
 (defun elisp-tred--tree-guide-at-point-p ()
   "Return non-nil if there is a tree guide overlay at point.
@@ -802,9 +863,8 @@ consistent and predictable manner."
   (when-let ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
     (let* ((first-child (car children))
            (gap-start (treesit-node-start node))
-           (gap-end (treesit-node-start first-child))
-           (replacement (when (or folded (not (elisp-tred--tree-guide-p first-child))) " ")))
-      (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
+           (gap-end (treesit-node-start first-child)))
+      (elisp-tred--hide-whitespace-in-range gap-start gap-end))
 
     ;; Hide whitespace between consecutive children
     (let ((prev-child (car children)))
@@ -818,9 +878,8 @@ consistent and predictable manner."
     ;; Hide whitespace after the last child
     (let* ((last-child (car (last children)))
            (gap-start (treesit-node-end last-child))
-           (gap-end (treesit-node-end node))
-           (replacement (when folded " ")))
-      (elisp-tred--hide-whitespace-in-range gap-start gap-end replacement))
+           (gap-end (treesit-node-end node)))
+      (elisp-tred--hide-whitespace-in-range gap-start gap-end))
 
     ;; Recursively process children
     (dolist (child children)
@@ -843,6 +902,48 @@ fully invisible."
           (if replacement
               (overlay-put overlay 'display replacement)
             (overlay-put overlay 'invisible t)))))))
+
+(defun elisp-tred--whitespace-region-hidden-p (beg end)
+  (let ((overlays (overlays-in beg end)))
+    (seq-find (lambda (overlay)
+                (and (eq (overlay-get overlay 'category) 'elisp-tred-whitespace)
+                     (<= (overlay-start overlay) beg)
+                     (>= (overlay-end overlay) end)))
+              overlays)))
+
+;(defun elisp-tred--whitespace-build-cleanup-list (node &optional cleanup-list)
+;  (when-let* ((node-type (treesit-node-type node))
+;              (prev-sibling (treesit-node-prev-sibling node)))
+;    (when (and (string= node-type "horizontal_whitespace")
+;               (elisp-tred--treesit-temporary-newline-p prev-sibling))
+;      (push (cons (treesit-node-start node) (treesit-node-end node)) cleanup-list)))
+;  (dolist (child (treesit-node-children node))
+;    (elisp-tred--whitespace-build-cleanup-list child cleanup-list)))
+
+(defun elisp-tred--whitespace-cleanup (beg end)
+  (let ((top-level-nodes (elisp-tred--treesit-top-level-nodes-overlapping-range beg end))
+        (total-deleted-chars 0)
+        deletion-list)
+    (cl-labels ((build-deletion-list (node)
+				 (when (elisp-tred--treesit-hidden-whitespace-after-temporary-newline-p node)
+                   (let* ((beg (treesit-node-start node))
+                          (end (treesit-node-end node))
+                          (range (cons beg end)))
+                     (push range deletion-list)))
+                 (dolist (child (treesit-node-children node t))
+                   (build-deletion-list child))))
+      (dolist (top-level-node top-level-nodes)
+       (build-deletion-list top-level-node)))
+    (dolist (range deletion-list)
+      (let* ((beg (car range))
+             (end (cdr range))
+             (deleted-chars (- end beg 1)))
+        (save-excursion
+          (delete-region beg end)
+          (goto-char beg)
+		  (insert " "))
+        (setq total-deleted-chars (+ total-deleted-chars deleted-chars))))
+    total-deleted-chars))
 
 ;;; Folding
 ;;
@@ -1468,7 +1569,7 @@ is used to work the bug/quirk that Emacs calls its redisplay hooks
 multiple times for the same redisplay event, and the exact number of
 hook invocations isn't even predictable.")
 
-(defun elisp-tred--update-tree-structure-changed-p (change)
+(defun elisp-tred--update-tree-structure-changed-p (change &optional node-predicate)
   "Return non-nil if the given buffer edit CHANGE would change the
 structure of the treesit parse tree.
 
@@ -1484,7 +1585,8 @@ symbol, do not have any effect on the treesit parse tree."
           (elisp-tred--treesit-top-level-nodes-overlapping-range beg end)))
     (elisp-tred--treesit-nodes-structural-diff-p
      top-level-nodes-before
-     top-level-nodes-after)))
+     top-level-nodes-after
+     (or node-predicate #'elisp-tred--treesit-sexp-p))))
 
 (defun elisp-tred--update-change-get ()
   "Return the current set of pending user buffer edits, combined into
@@ -1511,8 +1613,7 @@ user's most recent edits to the buffer."
   (when-let* ((change (elisp-tred--update-change-get))
               (update-range (elisp-tred--update-range-calculate change))
               (update-beg (car update-range))
-              (update-end (cdr update-range))
-              (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
+              (update-end (cdr update-range)))
     (message "change: %s" change)
     ;; If the structure of the treesit parse tree hasn't changed,
     ;; don't update the Elisp-Tred overlays.
@@ -1526,14 +1627,19 @@ user's most recent edits to the buffer."
     ;;
     ;; Skipping overlay updates may have some performance benefit as
     ;; well, but that is not the main motivation.
-    (message "tree-structure-changed-p: %s" tree-structure-changed-p)
-    (when tree-structure-changed-p
-      (let* ((update-range (elisp-tred--update-range-calculate change))
-             (update-beg (car update-range))
-             (update-end (cdr update-range))
-             (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
-        (dolist (node nodes-to-update)
-          (elisp-tred--update-overlays node))))
+    (if (elisp-tred--update-tree-structure-changed-p change #'elisp-tred--treesit-sexp-p)
+        (let ((nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
+          (message "elisp-tred change type: sexp")
+          (dolist (node nodes-to-update)
+            (elisp-tred--update-overlays node)))
+      (if (elisp-tred--update-tree-structure-changed-p change #'elisp-tred--treesit-node-sexp-or-newline-p)
+          (let* ((deleted-chars (elisp-tred--whitespace-cleanup update-beg update-end))
+                 (update-end (- update-end deleted-chars))
+                 (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
+            (message "elisp-tred change type: newline")
+            (dolist (node nodes-to-update)
+              (elisp-tred--tree-guide-overlays-update node)))
+        (message "elisp-tred change type: non-structural")))
     ;; re-sync shadow buffer to main buffer, in preparation
     ;; for user's next edit
     (elisp-tred--update-shadow-buffer-apply-change change)))
@@ -1782,6 +1888,30 @@ overlay spans by category, and invisible-p state. The diagram is
 displayed in a buffer named \"*overlays: BUFFER-NAME*\"."
   (interactive)
   (pop-to-buffer (elisp-tred--render-overlay-diagram)))
+
+;;; Auto-formatting elisp code
+;;
+;; Functions for automatically formatting the whitespace and
+;; indentation of elisp code.
+;;
+;; Whenever the user makes a structural change to the code, we
+;; automatically reformat the top-level elisp form (e.g. `defun'
+;; declaration) by adding/removing newlines, adjusting indentation,
+;; and deleting trailing whitespace as needed.
+;;
+;; Although Emacs built-in `pp' library has some functions to
+;; auto-format elisp code (e.g. the `pp-buffer' to reformat all elisp
+;; code in the current buffer), I didn't like its choices about
+;; newline placement, and I found that it was not aggressive enough
+;; about removing extraneous newlines/whitespace.
+
+(defun elisp-tred--format (node)
+
+  )
+
+(defun elisp-tred-format (node)
+
+  )
 
 ;;; Evil integration
 ;;
