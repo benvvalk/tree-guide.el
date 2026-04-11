@@ -1514,26 +1514,8 @@ user's most recent edits to the buffer."
               (update-end (cdr update-range))
               (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
     (message "change: %s" change)
-    ;; If the structure of the treesit parse tree hasn't changed,
-    ;; don't update the Elisp-Tred overlays.
-    ;;
-    ;; The main reason we avoid updating the overlays for
-    ;; non-structural edits is that we don't want our whitespace
-    ;; overlays to immediately hide space/newline characters that the
-    ;; user has just typed into the buffer. This would make it appear
-    ;; that nothing is happening while the user is typing in the
-    ;; buffer, which is very disconcerting.
-    ;;
-    ;; Skipping overlay updates may have some performance benefit as
-    ;; well, but that is not the main motivation.
-    (message "tree-structure-changed-p: %s" tree-structure-changed-p)
-    (when tree-structure-changed-p
-      (let* ((update-range (elisp-tred--update-range-calculate change))
-             (update-beg (car update-range))
-             (update-end (cdr update-range))
-             (nodes-to-update (elisp-tred--treesit-top-level-nodes-overlapping-range update-beg update-end)))
-        (dolist (node nodes-to-update)
-          (elisp-tred--update-overlays node))))
+    (dolist (node nodes-to-update)
+      (elisp-tred--update-overlays node))
     ;; re-sync shadow buffer to main buffer, in preparation
     ;; for user's next edit
     (elisp-tred--update-shadow-buffer-apply-change change)))
