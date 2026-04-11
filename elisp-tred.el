@@ -1060,10 +1060,10 @@ whitespace/indentation."
   (let ((tree-guide-flags (elisp-tred--tree-guide-flags node))
         (start (treesit-node-start node))
         (end (treesit-node-end node)))
-    (if folded
-        ;; (elisp-tred--create-fold-overlays-for-strings node)
-        (elisp-tred--create-fold-overlays node)
-      (elisp-tred--create-whitespace-overlays node nil))
+    ;; (if folded
+    ;;     ;; (elisp-tred--create-fold-overlays-for-strings node)
+    ;;     (elisp-tred--create-fold-overlays node)
+    ;;   (elisp-tred--create-whitespace-overlays node nil))
     (elisp-tred--create-tree-guide-overlays node folded tree-guide-flags)))
 
 (defun elisp-tred--update-overlays (node)
