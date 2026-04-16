@@ -1707,19 +1707,34 @@ Returns the output buffer."
                 (insert " ")))
             (insert "\n")
 
-            ;; Row for each overlay category
+            ;; Rows for each overlay category
             (dolist (cat overlay-categories)
               (let ((cat-name (symbol-name cat))
-                    (row (make-string (1+ (* 2 num-chars)) ?\s)))
+                    rows)
                 ;; Truncate or pad category name to fixed width
                 (setq cat-name (truncate-string-to-width cat-name label-width nil ?\s))
-                (insert cat-name)
 
                 ;; Mark overlays in the row
                 (dolist (ov all-overlays)
                   (when (eq (overlay-get ov 'category) cat)
-                    (let ((start (max (point-min) (overlay-start ov)))
-                          (end (min (point-max) (overlay-end ov))))
+                    (let* ((start (max (point-min) (overlay-start ov)))
+                           (end (min (point-max) (overlay-end ov)))
+                           ;; Find first existing row where the
+                           ;; overlay doesn't overlap with an existing
+                           ;; overlay. If overlay doesn't fit in an
+                           ;; existing row, create a new row instead.
+                           (row (or (seq-find (lambda (row)
+                                                (seq-every-p (lambda (pos)
+                                                               (eq (aref row (* 2 (1- pos))) ?\.))
+                                                             (number-sequence start end)))
+                                              rows)
+                                    (let ((new-row (with-temp-buffer
+                                                     (insert ".")
+                                                     (dotimes (i num-chars)
+                                                       (insert " ."))
+                                                     (buffer-string))))
+                                      (setq rows (append rows (list new-row)))
+                                      new-row))))
                       (when (<= start end)
                         ;; Convert buffer position to diagram position
                         ;; Buffer pos N maps to diagram position 2*(N-1)
@@ -1731,15 +1746,16 @@ Returns the output buffer."
                           ;; Mark middle positions (skip every other position for spaces)
                           (let ((i (+ diagram-start 2)))
                             (while (< i diagram-end)
-                              (when (eq (aref row i) ?\s)
-                                (aset row i ?\-))
+                              (aset row i ?\-)
                               (setq i (+ i 2))))
                           ;; Mark end position
                           (when (and (>= end (point-min)) (<= end (point-max)))
                             (aset row diagram-end ?\])))))))
 
-                (insert row)
-                (insert "\n")))
+                (dolist (row rows)
+                  (insert cat-name)
+                  (insert row)
+                  (insert "\n"))))
 
             ;; Row: invisible-p state
             (insert (truncate-string-to-width "invisible-p:" label-width nil ?\s))
