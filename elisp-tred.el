@@ -238,11 +238,18 @@ The range is returned as a cons cell (BEG . END)."
     range))
 
 (defun elisp-tred--treesit-node-first-in-buffer-p (node)
-  "Return non-nil if NODE is the first treesit node that occurs in the
-the buffer (excluding the root node)."
-  (when-let* ((root (treesit-buffer-root-node 'elisptred))
-              (first-child (treesit-node-child root 0)))
-    (treesit-node-eq first-child node)))
+  "Return non-nil if treesit node NODE is on the first line of the
+buffer, and is preceded only by indentation whitespace.
+
+The first elisp form in the file is a special case when creating tree
+guides, because normally we create tree guides after the newline that
+ends the previous line."
+  (let ((beg (treesit-node-start node)))
+    (save-excursion
+      (goto-char beg)
+      (let ((line-beg (point-at-bol)))
+        (and (= line-beg (point-min))
+             (= (+ line-beg (current-indentation)) beg))))))
 
 (defun elisp-tred--treesit-node-top-level-p (node)
   "Return non-nil if treesit node NODE is a top-level elisp form
@@ -342,6 +349,24 @@ operations (e.g. whitespace formatting), but in many cases we want
 write the code as if the whitespace nodes don't exist."
   (let ((node-type (treesit-node-type node)))
     (not (member node-type '("horizontal_whitespace" "newline")))))
+
+(defun elisp-tred--treesit-node-newline-p (node)
+  "Return non-nil if treesit node NODE is a newline.
+
+Exception: We return nil for the newline character that appears at the
+last character position in the buffer (if any), because we don't want
+to create a tree guide for the final empty line."
+  (and (string= (treesit-node-type node) "newline")
+       ;; exclude final newline in file, because
+       ;; we don't want to create a tree guide for that
+       (/= (treesit-node-end node) (point-max))))
+
+(defun elisp-tred--treesit-node-sexp-or-newline-p (node)
+  "Return non-nil if treesit node NODE is an elisp sexp or a newline,
+excluding the newline that appears at the last character position in
+the buffer."
+  (or (elisp-tred--treesit-sexp-p node)
+      (elisp-tred--treesit-node-newline-p node)))
 
 (defun elisp-tred--treesit-node-quoted-or-unquoted-p (node)
   "Return non-nil if treesit node NODE is a quoted or
@@ -723,19 +748,59 @@ treesit node NODE, or `nil' otherwise."
             (not (elisp-tred--treesit-node-top-level-p node))
             (eq (treesit-node-child-count node t) 0)))))
 
+(defun elisp-tred--tree-guide-overlay-for-line (pos)
+  "Return the tree guide overlay for the line containing POS, if any."
+  (save-excursion
+    (goto-char pos)
+    (let ((overlays (overlays-in (line-beginning-position) (line-end-position))))
+      (seq-find (lambda (overlay)
+                  (eq (overlay-get overlay 'category) 'elisp-tred-guide))
+                overlays))))
+
+(defun elisp-tred--create-tree-guide-overlay-for-line-at-pos (pos guide-flags)
+  "Create a tree guide overlay for the line containing POS.
+
+If a tree guide overlay for the line containing POS already exists, do
+nothing."
+  ;; don't create tree guide overlay if it already exists
+  (unless (elisp-tred--tree-guide-overlay-for-line pos)
+    (when-let* ((guide-string (elisp-tred--tree-guide-flags-to-string guide-flags)))
+      (save-excursion
+        (goto-char pos)
+        (beginning-of-line)
+        (let* ((line-end (line-end-position))
+               (overlay (make-overlay (point) (1+ line-end) nil t)))
+          (overlay-put overlay 'category 'elisp-tred-guide)
+          (overlay-put overlay 'evaporate t)
+          (overlay-put overlay 'line-prefix guide-string))))))
+
 (defun elisp-tred--create-tree-guide-overlays (node folded &optional guide-flags)
   "Create the tree guide overlays for treesit node NODE and all of its
 descendants.
 
 GUIDE-FLAGS is a list of booleans, one per ancestor node, that is used
 to construct the tree guide lines."
-  (when (elisp-tred--tree-guide-p node)
-    (elisp-tred--create-tree-guide-overlays-for-node node folded guide-flags))
+  (let ((newline-p (elisp-tred--treesit-node-newline-p node))
+        (first-in-buffer-p (elisp-tred--treesit-node-first-in-buffer-p node)))
+    (when (or newline-p first-in-buffer-p)
+      ;; We want the tree guide overlay to start *after* the newline
+	  ;; that ends the previous line. The only exception is the tree
+	  ;; guide that we create for the first line in the buffer, because
+	  ;; there is no preceding newline in that case.
+      (let ((pos (if newline-p
+                     (treesit-node-end node)
+                   (treesit-node-start node))))
+        (elisp-tred--create-tree-guide-overlay-for-line-at-pos pos guide-flags))))
   (unless folded
-    (let* ((children (treesit-filter-child node #'elisp-tred--treesit-sexp-p t)))
+    (let* ((children (treesit-filter-child node #'elisp-tred--treesit-node-sexp-or-newline-p t))
+           (children-newlines (treesit-filter-child node #'elisp-tred--treesit-node-newline-p t))
+           (child-newline-last (car (last children-newlines)))
+           (guide-flag t))
      (dolist (child children)
-       (let* ((guide-flag (not (elisp-tred--last-child-p child)))
-              (guide-flags (append guide-flags (list guide-flag))))
+       (when (or (null children-newlines)
+                 (treesit-node-eq child child-newline-last))
+         (setq guide-flag nil))
+       (let* ((guide-flags (append guide-flags (list guide-flag))))
          (elisp-tred--create-tree-guide-overlays child folded guide-flags))))))
 
 (defun elisp-tred--tree-guide-at-point-p ()
