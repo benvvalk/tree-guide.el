@@ -927,6 +927,39 @@ characters instead."
       (overlay-put overlay 'evaporate t)
       (overlay-put overlay 'invisible t))))
 
+(defun elisp-tred-indent--advice (orig-fn)
+  "Advice for Emacs' built-in indent functions
+(e.g. `lisp-indent-line', `lisp-indent-region'), that temporarily
+unhides indentation whitespace on all lines.
+
+Normally we hide the indentation whitespace and show the tree guides
+instead. However, Emacs' built-in indent functions don't calculate the
+correct column values unless they can 'see' the indentation whitespace
+on the previous line.
+
+To work around this, we add an advice that temporarily unhides all
+invisible text, by setting `buffer-invisibility-spec' to nil."
+  (let (buffer-invisibility-spec)
+    (funcall orig-fn)))
+
+(defun elisp-tred-indent--advice-init ()
+  "Add advice to Emacs' built-in line/region indentation functions, so
+that they work correctly in Elisp-Tred mode.
+
+See the docstring for `elisp-tred-indent--advice' for further
+explanation."
+  (advice-add indent-line-function :around #'elisp-tred-indent--advice)
+  (advice-add indent-region-function :around #'elisp-tred-indent--advice))
+
+(defun elisp-tred-indent--advice-teardown ()
+  "Remove advice from Emacs' built-in line/region indentation
+functions.
+
+See the docstring for `elisp-tred-indent--advice' for further
+explanation."
+  (advice-remove indent-line-function #'elisp-tred-indent--advice)
+  (advice-remove indent-region-function #'elisp-tred-indent--advice))
+
 ;;; Folding
 ;;
 ;; Implements collapsing/expanding of the current line using the TAB
@@ -1925,6 +1958,7 @@ nothing."
     (set (make-local-variable var) saved-value)))
 
 (defun elisp-tred--mode-init ()
+  (elisp-tred-indent--advice-init)
   (elisp-tred--update-shadow-buffer-init)
   (elisp-tred--treesit-init)
   ;; save user's buffer-local vars before modifying
@@ -1941,6 +1975,7 @@ nothing."
   "Delete Elisp-Tred overlays, destroy `elisptred' treesit parser,
 and restore `visual-line-mode' to its original value before enabling
 `elisp-tred-mode'."
+  (elisp-tred-indent--advice-teardown)
   (elisp-tred--update-shadow-buffer-teardown)
   (elisp-tred--remove-all-overlays-in-buffer)
   (elisp-tred--treesit-teardown)
