@@ -790,6 +790,7 @@ to construct the tree guide lines."
       (let ((pos (if newline-p
                      (treesit-node-end node)
                    (treesit-node-start node))))
+        (elisp-tred--whitespace-hide-indentation-on-line pos)
         (elisp-tred--create-tree-guide-overlay-for-line-at-pos pos guide-flags))))
   (unless folded
     (let* ((children (treesit-filter-child node #'elisp-tred--treesit-node-sexp-or-newline-p t))
@@ -908,6 +909,21 @@ fully invisible."
           (if replacement
               (overlay-put overlay 'display replacement)
             (overlay-put overlay 'invisible t)))))))
+
+(defun elisp-tred--whitespace-hide-indentation-on-line (pos)
+  "Create an overlay that hides the leading whitespace on the line
+containing POS.
+
+We hide the leading whitespace so that we can display the tree guide
+characters instead."
+  (save-excursion
+    (goto-char pos)
+    (let* ((overlay-beg (line-beginning-position))
+           (overlay-end (+ overlay-beg (current-indentation)))
+           (overlay (make-overlay overlay-beg overlay-end nil t nil)))
+      (overlay-put overlay 'category 'elisp-tred-whitespace)
+      (overlay-put overlay 'evaporate t)
+      (overlay-put overlay 'invisible t))))
 
 ;;; Folding
 ;;
