@@ -774,7 +774,7 @@ nothing."
           (overlay-put overlay 'evaporate t)
           (overlay-put overlay 'line-prefix guide-string))))))
 
-(defun elisp-tred--create-tree-guide-overlays (node folded &optional guide-flags)
+(defun elisp-tred--create-tree-guide-overlays (node _folded &optional guide-flags)
   "Create the tree guide overlays for treesit node NODE and all of its
 descendants.
 
@@ -792,17 +792,16 @@ to construct the tree guide lines."
                    (treesit-node-start node))))
         (elisp-tred-indent--hide-indentation pos)
         (elisp-tred--create-tree-guide-overlay-for-line-at-pos pos guide-flags))))
-  (unless folded
-    (let* ((children (treesit-filter-child node #'elisp-tred--treesit-node-sexp-or-newline-p t))
-           (children-newlines (treesit-filter-child node #'elisp-tred--treesit-node-newline-p t))
-           (child-newline-last (car (last children-newlines)))
-           (guide-flag t))
-     (dolist (child children)
-       (when (or (null children-newlines)
-                 (treesit-node-eq child child-newline-last))
-         (setq guide-flag nil))
-       (let* ((guide-flags (append guide-flags (list guide-flag))))
-         (elisp-tred--create-tree-guide-overlays child folded guide-flags))))))
+  (let* ((children (treesit-filter-child node #'elisp-tred--treesit-node-sexp-or-newline-p t))
+         (children-newlines (treesit-filter-child node #'elisp-tred--treesit-node-newline-p t))
+         (child-newline-last (car (last children-newlines)))
+         (guide-flag t))
+    (dolist (child children)
+      (when (or (null children-newlines)
+                (treesit-node-eq child child-newline-last))
+        (setq guide-flag nil))
+      (let* ((guide-flags (append guide-flags (list guide-flag))))
+        (elisp-tred--create-tree-guide-overlays child _folded guide-flags)))))
 
 (defun elisp-tred--tree-guide-at-point-p ()
   "Return non-nil if there is a tree guide overlay at point.
