@@ -1341,25 +1341,6 @@ instead."
   (when-let ((pos (elisp-tred--pos-column-to-buffer column-pos)))
     (goto-char pos)))
 
-(defun elisp-tred-go-to-line-prev ()
-  "Move to the previous line, maintaining the current column position
-if possible."
-  (interactive)
-  (unless (eq last-command this-command)
-    (setq elisp-tred--pos-goal-column (elisp-tred--pos-buffer-to-column (point))))
-  (if-let ((pos (elisp-tred--pos-line-prev elisp-tred--pos-goal-column)))
-      (goto-char pos)
-    (user-error "no previous line")))
-
-(defun elisp-tred-go-to-line-next ()
-  "Move to the beginning of the next line."
-  (interactive)
-  (unless (eq last-command this-command)
-    (setq elisp-tred--pos-goal-column (elisp-tred--pos-buffer-to-column (point))))
-  (if-let ((pos (elisp-tred--pos-line-next elisp-tred--pos-goal-column)))
-      (goto-char pos)
-    (user-error "no next line")))
-
 ;;; Helper functions for buffer ranges
 
 (defun elisp-tred--range-contains-pos-p (beg end pos)
@@ -1880,37 +1861,6 @@ overlay spans by category, and invisible-p state. The diagram is
 displayed in a buffer named \"*overlays: BUFFER-NAME*\"."
   (interactive)
   (pop-to-buffer (elisp-tred--render-overlay-diagram)))
-
-;;; Evil integration
-;;
-;; Remap j/k and up/down arrows to move by visual lines rather than
-;; real newlines. In order to render the elisp syntax tree in a
-;; consistent manner, `elisp-tred' uses many overlays to both add
-;; visual newlines and hide real newlines. As a result, scrolling by
-;; real newlines feels like buggy/non-sensical behaviour.
-;;
-;; Note 1: These key remappings are only enabled while
-;; `elisp-tred-mode' is enabled. The user's original j/k/up/down
-;; keybindings are restored when `elisp-tred-mode' is disabled, even
-;; if they are custom keybindings.
-;;
-;; Note 2: Setting `evil-respect-visual-line-mode' to `t' accomplishes
-;; a similar result to these remapping. However, my rebindings remap
-;; both the j/k keys and the up/down arrow keys, whereas
-;; `evil-respect-visual-line-mode' only remaps the j/k keys [1].
-;;
-;; [1]: https://github.com/emacs-evil/evil/issues/1971
-
-(with-eval-after-load 'evil
-  (dolist (state '(normal insert visual motion))
-    (evil-define-minor-mode-key state 'elisp-tred-mode
-      (kbd "<down>") #'elisp-tred-go-to-line-next
-      (kbd "<up>") #'elisp-tred-go-to-line-prev))
-  (dolist (state '(normal visual motion))
-    (evil-define-minor-mode-key state 'elisp-tred-mode
-      (kbd "TAB") #'elisp-tred-fold-toggle-current-line
-      (kbd "j") #'evil-next-visual-line
-      (kbd "k") #'evil-previous-visual-line)))
 
 ;;; Keymap
 
