@@ -77,7 +77,12 @@ is the last child of its parent."
     (let* ((parser-state (syntax-ppss))
            (parent-sexp-beg (nth 1 parser-state))
            (last-line-at-current-depth-p (elisp-tred-guide--last-line-at-current-depth-p))
-           (guide-column (current-column)))
+           ;; Note: In order for `current-column' to return the
+           ;; correct value (i.e. the number of indentation spaces on
+           ;; current line), we need to temporarily make the hidden
+           ;; indentation whitespace visible, by setting
+           ;; `buffer-invisibility-spec' to nil.
+           (guide-column (let (buffer-invisibility-spec) (current-column))))
       (push (cons guide-column last-line-at-current-depth-p) guide-columns)
       (if parent-sexp-beg
           (progn
@@ -119,10 +124,25 @@ further information about the structure/meaning of GUIDE-COLUMNS."
               guide-string-parts)))
     (string-join (nreverse guide-string-parts))))
 
+(defun elisp-tred-guide--hide-indentation-for-current-line ()
+  "Create an overlay that hides the leading whitespace on the current
+line, i.e. the indentation whitespace. If there is no leading
+whitespace on the current line, do nothing."
+  (let ((indentation (current-indentation)))
+    (when (> indentation 0)
+      (save-excursion
+        (let* ((overlay-beg (line-beginning-position))
+               (overlay-end (+ overlay-beg indentation))
+               (overlay (make-overlay overlay-beg overlay-end nil t nil)))
+          (overlay-put overlay 'category 'elisp-tred-indentation)
+          (overlay-put overlay 'evaporate t)
+          (overlay-put overlay 'invisible t))))))
+
 (defun elisp-tred-guide--create-for-current-line ()
   "Create an overlay which displays the guide string for the
 current line."
-  (move-to-column (current-indentation))
+  (let (buffer-invisibility-spec)
+    (move-to-column (current-indentation)))
   (let* ((guide-columns (elisp-tred-guide--compute-guide-columns))
          (guide-string (elisp-tred-guide--make-guide-string guide-columns))
          (overlay-beg (line-beginning-position))
@@ -144,11 +164,14 @@ guides."
                (buffer-substring-no-properties
                 (line-beginning-position)
                 (line-end-position)))
+      (elisp-tred-guide--hide-indentation-for-current-line)
       (elisp-tred-guide--create-for-current-line)
       (forward-line))))
 
 (defun elisp-tred-guide--destroy-all ()
-  "Destroy all overlays used display guides in the current buffer."
-  (remove-overlays nil nil 'category 'elisp-tred-guide))
+  "Destroy all overlays related to Elisp-Tred-Guide in the current
+buffer."
+  (remove-overlays nil nil 'category 'elisp-tred-guide)
+  (remove-overlays nil nil 'category 'elisp-tred-indentation))
 
 (provide 'elisp-tred-guide)
