@@ -1,5 +1,3 @@
-(require 'ert)
-
 (defcustom elisp-tred-guide-min-handle-width 1
   "Minimum width of guide handle, in characters.")
 

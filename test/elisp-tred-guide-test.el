@@ -1,4 +1,5 @@
 (require 'elisp-tred-guide)
+(require 'ert)
 
 (ert-deftest elisp-tred-guide--test--beginning-next-sexp--valid-next-sexp ()
   (let ((elisp-valid-next-sexp "(a) (b)")
