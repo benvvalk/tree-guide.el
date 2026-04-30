@@ -176,11 +176,20 @@ buffer."
   (remove-overlays nil nil 'category 'elisp-tred-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
 
+(defun elisp-tred-guide--mode-init ()
+  "Performs necessary initialization when enabling Elisp-Tred-Guide
+mode."
+  (elisp-tred-guide--create-all))
+
+(defun elisp-tred-guide--mode-teardown ()
+  "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
+  (elisp-tred-guide--destroy-all))
+
 (define-minor-mode elisp-tred-guide-mode
   "Display tree guides for elisp code."
   :lighter nil
   (if elisp-tred-guide-mode
-      (elisp-tred-guide--create-all)
-    (elisp-tred-guide--destroy-all)))
+      (elisp-tred-guide--mode-init)
+    (elisp-tred-guide--mode-teardown)))
 
 (provide 'elisp-tred-guide)
