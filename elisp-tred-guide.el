@@ -1,3 +1,5 @@
+(require 'easy-mmode) ;; for `define-minor-mode'
+
 (defcustom elisp-tred-guide-min-handle-width 1
   "Minimum width of guide handle, in characters.")
 
@@ -173,5 +175,12 @@ guides."
 buffer."
   (remove-overlays nil nil 'category 'elisp-tred-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
+
+(define-minor-mode elisp-tred-guide-mode
+  "Display tree guides for elisp code."
+  :lighter nil
+  (if elisp-tred-guide-mode
+      (elisp-tred-guide--create-all)
+    (elisp-tred-guide--destroy-all)))
 
 (provide 'elisp-tred-guide)
