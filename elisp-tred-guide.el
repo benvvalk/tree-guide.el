@@ -154,35 +154,184 @@ current line."
     (overlay-put overlay 'evaporate t)
     (overlay-put overlay 'line-prefix guide-string)))
 
-(defun elisp-tred-guide--create-all ()
-  "Create an overlay for each line in the buffer, to display the
-guides."
-  (save-excursion
-    (goto-char (point-min))
-    ;; for each line
-    (while (not (eobp))
-      (message "%s: %s"
-               (line-number-at-pos)
-               (buffer-substring-no-properties
-                (line-beginning-position)
-                (line-end-position)))
-      (elisp-tred-guide--hide-indentation-for-current-line)
-      (elisp-tred-guide--create-for-current-line)
-      (forward-line))))
-
 (defun elisp-tred-guide--destroy-all ()
   "Destroy all overlays related to Elisp-Tred-Guide in the current
 buffer."
   (remove-overlays nil nil 'category 'elisp-tred-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
 
+(defvar-local elisp-tred-guide--dirty-line-ranges nil
+  "The line ranges where the guides are out-of-date due the user
+making edits in the buffer.")
+
+(defun elisp-tred-guide--mark-all-buffer-lines-dirty ()
+  "Mark all lines in the buffer as 'dirty', meaning that the guides on
+those lines need to be updated to correctly reflect the structure of
+the lisp code in the buffer."
+  (setq elisp-tred-guide--dirty-line-ranges
+        (list (cons
+               (line-number-at-pos (point-min))
+               (line-number-at-pos (point-max))))))
+
+(defvar-local elisp-tred-guide--buffer-chars-modified-tick nil
+  "The last `buffer-chars-modified-tick' that we've processed. This
+value is used to work around the bug/quirk that Emacs calls its
+redisplay hooks an unpredictable number of times for the same
+redisplay event.")
+
+(defun elisp-tred-guide--create-guides-in-line-range (range)
+  "Create guides for the line numbers contained in RANGE."
+  (let ((line-beg (car range))
+        (line-end (cdr range)))
+    (save-excursion
+	 (goto-line line-beg)
+     (while (and (<= (line-number-at-pos) line-end)
+                 (not (eobp)))
+       (elisp-tred-guide--hide-indentation-for-current-line)
+       (elisp-tred-guide--create-for-current-line)
+       (forward-line)))))
+
+(defun elisp-tred-guide--destroy-guides-in-line-range (range)
+  "Destroy guides for the line numbers contained in RANGE."
+  (let* ((line-beg (car range))
+         (line-end (cdr range))
+         (beg (save-excursion
+                (goto-line line-beg)
+                (line-beginning-position)))
+         (end (save-excursion
+                (goto-line line-end)
+                ;; `1+' because guide overlays include the newline at
+                ;; the end of the line, if present. (This gives us a
+                ;; character to attach the guide overlays to on empty
+                ;; lines.)
+                (min (1+ (line-end-position))
+                     (point-max)))))
+    (remove-overlays beg end 'category 'elisp-tred-guide)
+    (remove-overlays beg end 'category 'elisp-tred-indentation)))
+
+(defun elisp-tred-guide--line-ranges-subtract (range1 range2)
+  "Subtract line range RANGE2 from line range RANGE1, and return the
+result as a list of line ranges.
+
+Each line range in the returned list is a cons cell, where the CAR is
+the starting line number and the CDR is the ending line number
+(inclusive).
+
+Note that subtracting RANGE2 from RANGE1 may result 0, 1, or 2 line
+ranges, depending on how RANGE1 and RANGE2 overlap.
+
+Example: If RANGE1 is '(1 . 5) and RANGE2 is '(3 . 4), then the result
+is a list of two ranges: '((1 . 2) (5 . 5))."
+  (let* ((beg1 (car range1))
+         (beg2 (car range2))
+         (end1 (cdr range1))
+         (end2 (cdr range2))
+         result-ranges)
+    ;; If there is no overlap between `range1' and `range2', return
+    ;; `range1' unaltered.
+    (if (or (> beg1 end2) (> beg2 end1))
+        (list range1)
+      ;; Otherwise, compute subtraction which can result in 0-2
+      ;; ranges. Result will be 0 ranges (i.e. nil) if `range2'
+      ;; completely covers `range1'.
+      (when (> end1 end2)
+        (push (cons (1+ end2) end1) result-ranges))
+      (when (< beg1 beg2)
+        (push (cons beg1 (1- beg2)) result-ranges))
+      result-ranges)))
+
+(defun elisp-tred-guide--line-ranges-intersect (range1 range2)
+  "Return the line range that is the intersection of line ranges
+RANGE1 and RANGE2. The result is returned as a cons cell, where the
+CAR is the starting line number and the CDR is the end line number
+(inclusive).
+
+Example: If RANGE1 is '(1 . 5) and RANGE2 is '(4 . 9), then the result
+is '(4 . 5)."
+  (let* ((beg1 (car range1))
+         (beg2 (car range2))
+         (end1 (cdr range1))
+         (end2 (cdr range2))
+         (result-beg (max beg1 beg2))
+         (result-end (min end1 end2)))
+    ;; If `result-beg' > `result-end', it means that `range1' and
+    ;; `range2' do not intersect.
+    (when (<= result-beg result-end)
+      (cons result-beg result-end))))
+
+(defun elisp-tred-guide--visible-line-range ()
+  "Return the range of line numbers that are visible in the current
+window as a cons cell, where the CAR is the starting line number and
+the CDR is the ending line number (inclusive)."
+  (let ((line-beg (save-excursion
+                    (goto-char (window-start))
+                    (line-number-at-pos)))
+        (line-end (save-excursion
+                    (goto-char (window-end))
+                    (line-number-at-pos))))
+    (cons line-beg line-end)))
+
+(defun elisp-tred-guide--mark-line-ranges-as-clean (line-ranges)
+  "Remove the 'dirty' status from LINE-RANGES.
+
+LINE-RANGES is a list of cons cells where the CAR is the starting line
+number and the CDR is the ending line number (inclusive)."
+  (dolist (line-range line-ranges)
+    (setq elisp-tred-guide--dirty-line-ranges
+          (mapcan (lambda (dirty-line-range)
+                    (elisp-tred-guide--line-ranges-subtract dirty-line-range line-range))
+                  elisp-tred-guide--dirty-line-ranges))))
+
+(defun elisp-tred-guide--compute-visible-line-ranges-that-are-dirty ()
+  "Return a list of line ranges that are both visible in the current
+window and marked as dirty."
+  (let ((visible-line-range (elisp-tred-guide--visible-line-range))
+        result)
+    (dolist (dirty-line-range elisp-tred-guide--dirty-line-ranges)
+      (when-let ((intersection-range (elisp-tred-guide--line-ranges-intersect
+                                      visible-line-range
+                                      dirty-line-range)))
+        (push intersection-range result)))
+    result))
+
+(defun elisp-tred-guide--update-visible-lines-that-are-dirty ()
+  "Update the guides for the lines that are both visible in the
+current window and marked as 'dirty'."
+  (let ((visible-line-ranges-that-are-dirty
+         (elisp-tred-guide--compute-visible-line-ranges-that-are-dirty)))
+    (dolist (dirty-line-range visible-line-ranges-that-are-dirty)
+      (elisp-tred-guide--destroy-guides-in-line-range dirty-line-range)
+      (elisp-tred-guide--create-guides-in-line-range dirty-line-range))
+    (elisp-tred-guide--mark-line-ranges-as-clean visible-line-ranges-that-are-dirty)))
+
+(defun elisp-tred-guide--pre-redisplay-hook (&rest _)
+  "Update the guides, in response to user edits in the buffer.
+
+This function is called by the built-in `pre-redisplay-functions'
+hook, which gets called immediately before the Emacs display engine
+re-renders the text in the current window."
+  ;; Note: We need to check `buffer-chars-modified-tick' here to avoid
+  ;; doing unnecessary work, because Emacs may invoke
+  ;; `pre-redisplay-functions' multiple times for the same redisplay
+  ;; event.
+  (unless (eq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick))
+    ;; If the buffer contents have changed in any way, naively
+    ;; mark all lines in the buffer as dirty.
+    (elisp-tred-guide--mark-all-buffer-lines-dirty)
+    (setq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick)))
+  (elisp-tred-guide--update-visible-lines-that-are-dirty))
+
+;;; Minor mode definition
+
 (defun elisp-tred-guide--mode-init ()
   "Performs necessary initialization when enabling Elisp-Tred-Guide
 mode."
-  (elisp-tred-guide--create-all))
+  (add-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook nil t)
+  (elisp-tred-guide--mark-all-buffer-lines-dirty))
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
+  (remove-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook t)
   (elisp-tred-guide--destroy-all))
 
 (define-minor-mode elisp-tred-guide-mode

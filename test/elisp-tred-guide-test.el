@@ -83,3 +83,31 @@
                                elisp-tred-guide--guide-char-space))
        elisp-tred-guide--guide-char-with-handle-last
        (string-join (make-list 2 elisp-tred-guide--guide-char-handle)))))))
+
+(ert-deftest elisp-tred-guide--test--range-subtract--range1-contains-range2 ()
+  (let ((range1 '(1 . 5))
+        (range2 '(3 . 4)))
+    (should
+     (equal (elisp-tred-guide--range-subtract range1 range2)
+            '((1 . 2) (5 . 5))))))
+
+(ert-deftest elisp-tred-guide--test--range-subtract--ranges-dont-overlap ()
+  (let ((range1 '(1 . 5))
+        (range2 '(6 . 8)))
+    (should
+     (equal (elisp-tred-guide--range-subtract range1 range2)
+            '((1 . 5))))))
+
+(ert-deftest elisp-tred-guide--test--range-intersection--range1-contains-range2 ()
+  (let ((range1 '(1 . 5))
+        (range2 '(3 . 4)))
+    (should
+     (equal (elisp-tred-guide--range-intersection range1 range2)
+            '(3 . 4)))))
+
+(ert-deftest elisp-tred-guide--test--range-intersection--range1-overlaps-start-of-range2 ()
+  (let ((range1 '(1 . 5))
+        (range2 '(4 . 9)))
+    (should
+     (equal (elisp-tred-guide--range-intersection range1 range2)
+            '(4 . 5)))))
