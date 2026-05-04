@@ -5,7 +5,7 @@
 
 (defvar elisp-tred-guide--guide-char-with-handle "├")
 (defvar elisp-tred-guide--guide-char-with-handle-last "╰")
-(defvar elisp-tred-guide--guide-char-without-handle "|")
+(defvar elisp-tred-guide--guide-char-without-handle "│")
 (defvar elisp-tred-guide--guide-char-handle "─")
 (defvar elisp-tred-guide--guide-char-space " ")
 
