@@ -3,6 +3,9 @@
 (defcustom elisp-tred-guide-min-handle-width 1
   "Minimum width of guide handle, in characters.")
 
+(defcustom elisp-tred-guide-enable-top-level-guides nil
+  "Show guides for top level sexps.")
+
 (defvar elisp-tred-guide--guide-char-with-handle "├")
 (defvar elisp-tred-guide--guide-char-with-handle-last "╰")
 (defvar elisp-tred-guide--guide-char-without-handle "│")
@@ -120,10 +123,11 @@ further information about the structure/meaning of GUIDE-COLUMNS."
                                (max (1- (- guide-column guide-column-prev))
                                     elisp-tred-guide-min-handle-width)
                              elisp-tred-guide-min-handle-width)))
-        (push (concat guide-char
-                      (string-join
-                       (make-list handle-width guide-extension-char)))
-              guide-string-parts)))
+        (when (or (> i 0) elisp-tred-guide-enable-top-level-guides)
+          (push (concat guide-char
+                        (string-join
+                         (make-list handle-width guide-extension-char)))
+                guide-string-parts))))
     (string-join (nreverse guide-string-parts))))
 
 (defun elisp-tred-guide--hide-indentation-for-current-line ()
