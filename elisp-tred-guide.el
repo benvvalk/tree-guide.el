@@ -1,5 +1,9 @@
 (require 'easy-mmode) ;; for `define-minor-mode'
 
+;;; Guide rendering
+;;
+;; For each logical line in the buffer, create a guide overlay.
+
 (defcustom elisp-tred-guide-min-handle-width 1
   "Minimum width of guide handle, in characters.")
 
