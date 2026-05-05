@@ -350,17 +350,54 @@ re-renders the text in the current window."
     (setq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick)))
   (elisp-tred-guide--update-visible-lines-that-are-dirty))
 
+;;; Integration with `electric-indent-mode' and `aggressive-indent-mode'
+
+(defun elisp-tred-guide--indent-advice (orig-fn &rest args)
+  "Advice for Emacs' built-in indent functions
+(e.g. `indent-line-function', `indent-region-function'), that temporarily
+unhides indentation whitespace on all lines.
+
+Normally we hide the indentation whitespace and show the tree guides
+instead. However, Emacs' built-in indent functions don't calculate the
+correct column values unless they can 'see' the indentation whitespace
+on the previous line.
+
+To work around this, we add an advice that temporarily unhides all
+invisible text, by setting `buffer-invisibility-spec' to nil."
+  (let (buffer-invisibility-spec)
+    (apply orig-fn args)))
+
+(defun elisp-tred-guide--indent-advice-init ()
+  "Add advice to Emacs' built-in line/region indentation functions, so
+that they work correctly in Elisp-Tred mode.
+
+See the docstring for `elisp-tred-guide--indent-advice' for further
+explanation."
+  (advice-add indent-line-function :around #'elisp-tred-guide--indent-advice)
+  (advice-add indent-region-function :around #'elisp-tred-guide--indent-advice))
+
+(defun elisp-tred-guide--indent-advice-teardown ()
+  "Remove advice from Emacs' built-in line/region indentation
+functions.
+
+See the docstring for `elisp-tred-guide--indent-advice' for further
+explanation."
+  (advice-remove indent-line-function #'elisp-tred-guide--indent-advice)
+  (advice-remove indent-region-function #'elisp-tred-guide--indent-advice))
+
 ;;; Minor mode definition
 
 (defun elisp-tred-guide--mode-init ()
   "Performs necessary initialization when enabling Elisp-Tred-Guide
 mode."
   (add-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook nil t)
+  (elisp-tred-guide--indent-advice-init)
   (elisp-tred-guide--mark-all-buffer-lines-dirty))
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
   (remove-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook t)
+  (elisp-tred-guide--indent-advice-teardown)
   (elisp-tred-guide--destroy-all))
 
 (define-minor-mode elisp-tred-guide-mode
