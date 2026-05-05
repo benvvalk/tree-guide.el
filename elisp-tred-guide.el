@@ -164,6 +164,31 @@ buffer."
   (remove-overlays nil nil 'category 'elisp-tred-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
 
+;;; Live update algorithm
+;;
+;; When the user edits the buffer, instantly update the guides to
+;; reflect the new buffer contents.
+;;
+;; Key points for understanding the live update algorithm:
+;;
+;; (1) The update algorithm is line-based, because there is a
+;; one-to-one relationship between guide overlays and logical lines in
+;; the buffer.
+;;
+;; (2) We keep track of which lines are "dirty" (i.e. which guides
+;; need to be updated) in `elisp-tred-guide--dirty-line-ranges'.
+;;
+;; (3) Whenever the user makes an edit to the buffer, we mark *every
+;; line* in the buffer as dirty. This sounds ridiculous, but it is
+;; actually reasonably efficient if we update the dirty lines
+;; incrementally over time (see point 4).
+;;
+;; (4) We use Emacs' built-in `pre-redisplay-functions' hook to
+;; incrementally update the dirty lines. This hook gets called
+;; immediately before Emacs' re-renders the text in the visible
+;; portion of the current window, at which time we determine which
+;; dirty lines are visible and update them.
+
 (defvar-local elisp-tred-guide--dirty-line-ranges nil
   "The line ranges where the guides are out-of-date due the user
 making edits in the buffer.")
