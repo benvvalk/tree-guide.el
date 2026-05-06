@@ -354,7 +354,32 @@ re-renders the text in the current window."
     (setq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick)))
   (elisp-tred-guide--update-visible-lines-that-are-dirty))
 
-;;; Integration with `electric-indent-mode' and `aggressive-indent-mode'
+;;; Integration with indentation functions
+;;
+;; This mode hides the leading indentation whitespace on each line, so
+;; that it can show the guides instead. However, some
+;; modes/commands/functions require indentation whitespace to be
+;; visible in order to behave correctly. The most important example
+;; are Emacs' built-in `indent-line-function' and
+;; `indent-region-function'.
+;;
+;; For such indentation-sensitive functions, we need to temporarily
+;; unhide all invisible text by setting `buffer-invisibility-spec' to
+;; nil.
+
+(defcustom elisp-tred-guide-regexps-for-commands-that-require-visible-indentation
+  '("lispy")
+  "A list of regexps for commands that require indentation whitespace
+to be visible, in order to function correctly.
+
+Normally, all indentation whitespace is hidden, and the guides are
+shown instead. However, some commands don't function correctly when
+indentation whitespace is hidden, most notably Emacs' built-in
+indentation functions (`indent-line-function' and
+`indent-region-function').
+
+Indentation whitespace is temporarily unhidden for commands that match
+this regexp list, by setting `buffer-invisibility-spec' to nil.")
 
 (defun elisp-tred-guide--indent-advice (orig-fn &rest args)
   "Advice for Emacs' built-in indent functions
@@ -389,6 +414,25 @@ explanation."
   (advice-remove indent-line-function #'elisp-tred-guide--indent-advice)
   (advice-remove indent-region-function #'elisp-tred-guide--indent-advice))
 
+(defun elisp-tred-guide--indent-pre-command-hook ()
+  (let ((command-name (symbol-name this-command)))
+    (when (seq-find
+           (lambda (regexp)
+             (string-match regexp command-name nil t))
+           elisp-tred-guide-regexps-for-commands-that-require-visible-indentation)
+      (setq-local buffer-invisibility-spec nil))))
+
+(defun elisp-tred-guide--indent-post-command-hook ()
+  (setq-local buffer-invisibility-spec t))
+
+(defun elisp-tred-guide--indent-command-hooks-init ()
+  (add-hook 'pre-command-hook #'elisp-tred-guide--indent-pre-command-hook nil t)
+  (add-hook 'post-command-hook #'elisp-tred-guide--indent-post-command-hook nil t))
+
+(defun elisp-tred-guide--indent-command-hooks-teardown ()
+  (remove-hook 'pre-command-hook #'elisp-tred-guide--indent-pre-command-hook t)
+  (remove-hook 'post-command-hook #'elisp-tred-guide--indent-post-command-hook t))
+
 ;;; Minor mode definition
 
 (defun elisp-tred-guide--mode-init ()
@@ -396,12 +440,14 @@ explanation."
 mode."
   (add-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook nil t)
   (elisp-tred-guide--indent-advice-init)
+  (elisp-tred-guide--indent-command-hooks-init)
   (elisp-tred-guide--mark-all-buffer-lines-dirty))
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
   (remove-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook t)
-  (elisp-tred-guide--indent-advice-teardown)
+  (elisp-tred-guide--indent-advice-init)
+  (elisp-tred-guide--indent-command-hooks-teardown)
   (elisp-tred-guide--destroy-all))
 
 (define-minor-mode elisp-tred-guide-mode
