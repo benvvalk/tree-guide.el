@@ -16,60 +16,70 @@
 (defvar elisp-tred-guide--guide-char-handle "─")
 (defvar elisp-tred-guide--guide-char-space " ")
 
-(defun elisp-tred-guide--beginning-next-sexp ()
-  "Move point to the start of the next sibling sexp and return the new
-value of point. If there is no next sibling sexp, point remains
-unchanged and the return value is nil.
+(defun elisp-tred-guide--parent-sexp-end-position ()
+  "Return the end position of the parent sexp containing point.
 
-This function is similar to the built-in `forward-sexp', with the
-following differences:
-
-(1) `forward-sexp' moves point to the end of the next sibling sexp,
-but this function moves to the start of the next sibling sexp.
-
-(2) `forward-sexp' has an inconsistent return value. When passed a
- positive argument (to move forwards over N sexps), it returns the new
-value of point. When passed a negative value (to move backwards over N
-sexps), it always returns nil."
-  (let ((orig-pos (point)))
-    (condition-case _
-        (progn
-          ;; Move forward over current sexp
-          (forward-sexp)
-          ;; Skip any whitespace/comments to find the next sibling
-          (skip-chars-forward " \t\n")
-          ;; Check for end-of-buffer or unbalanced closing delimiter
-          (if (or (eobp)
-                  (looking-at "[])}]")) ;; unbalanced closing delimiter
-              (progn
-                ;; No next sibling, restore position
-                (goto-char orig-pos)
-                nil)
-            ;; We found a next sibling, and we're at its beginning
-            t))
-      (scan-error ;; thrown when we encounter an unbalanced paren
-       (goto-char orig-pos)
-       nil))))
+If point is not contained within a sexp, i.e. it is located
+before/after/between top-level sexps, return the end-of-buffer
+position (i.e. the value returned by `point-max')."
+  (let* ((ppss (syntax-ppss))
+       (parent-sexp-beg (nth 1 ppss)))
+    ;; If `parent-sexp-beg' is nil, it means that point is located between
+    ;; top-level sexps. In that case, we treat the entire buffer as the
+    ;; parent sexp, and return `(point-max)'.
+    (if (null parent-sexp-beg)
+        (point-max)
+      ;; Else: Point is located inside one or more sexps, i.e. point is not
+      ;; located between top-level sexps. Find the end of the
+      ;; parent sexp using `scan-sexps'.
+      ;;
+      ;; Some notes about `scan-sexps' error cases:
+      ;;
+      ;; (1) If `scan-sexps' encounters an unbalanced close paren, it will
+      ;; throw a `scan-error'.
+      ;;
+      ;; (2) If `scan-sexps' reaches the end of the buffer without seeing
+      ;; the expected number of close parens, i.e. there are unbalanced
+      ;; open parens, it will throw a `scan-error'.
+      ;;
+      ;; (3) If `scan-sexps' encounters the end of the buffer before moving
+      ;; over COUNT balanced sexps, the return value is nil.
+      ;;
+      ;; Cases (1) and (3) should never occur in this function, because we
+      ;; always start the scan on an open paren, and we pass 1 for the COUNT
+      ;; argument.
+      ;;
+      ;; Case (2) is possible, in which case we return `(point-max)'.
+      (condition-case _
+          (scan-sexps parent-sexp-beg 1)
+        (scan-error (point-max))))))
 
 (defun elisp-tred-guide--last-line-at-current-depth-p ()
-  "Return non-nil if point is on the last line of the enclosing sexp.
+  "Return non-nil if there is no next sibling sexp, string, comment, or
+blank line that appears on a subsequent line.
 
-Example:
+Point should be positioned before the opening paren of the sexp
+that you want to test. Note that this function can return different
+values for different positions of point within the same line.
 
-(a
- (b
-  c))
-
-If point is before `(a', the return value is non-nil.
-
-If point is before `(b', the return value is nil.
-
-If point is before `c', the return value is non-nil."
-  (let ((bol (line-beginning-position)))
+Implementation note: We scan line-by-line, rather than moving by sexp,
+because we want to treat comment lines and blank lines as first class
+siblings."
+  (catch 'done
     (save-excursion
-      (while (and (elisp-tred-guide--beginning-next-sexp)
-                  (= (line-beginning-position) bol)))
-      (= (line-beginning-position) bol))))
+      (let* ((parent-sexp-beg (nth 1 (syntax-ppss)))
+             (parent-sexp-end (elisp-tred-guide--parent-sexp-end-position))
+             (parent-sexp-end-line-number (line-number-at-pos parent-sexp-end)))
+        (while (< (line-number-at-pos) parent-sexp-end-line-number)
+          (next-logical-line)
+          (beginning-of-line)
+          ;; When we encounter a sibling line (i.e. a line with the same parent
+          ;; start position)
+          (when (eql (nth 1 (syntax-ppss)) parent-sexp-beg)
+            (throw 'done nil)))
+        ;; Return t, because we reached the last line of the parent
+        ;; sexp, before encountering another sibling line.
+        t))))
 
 (defun elisp-tred-guide--compute-guide-columns (&optional guide-columns)
   "Compute the column positions for the guides on the current line.
