@@ -102,7 +102,7 @@ is the last child of its parent."
 (defun elisp-tred-guide--make-guide-string (guide-columns)
   "Make a guide string from GUIDE-COLUMNS.
 
-For example, if GUIDE-COLUMNS is ((1) (3) (6 .t)), the return value
+For example, if GUIDE-COLUMNS is ((1) (3) (6 . t)), the return value
 will be '| | ╰'.
 
 See the docstring for `elisp-tred-guide--compute-guide-columns' for
