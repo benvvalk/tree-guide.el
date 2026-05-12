@@ -93,21 +93,35 @@ position for a guide, and the CDR is the LAST-CHILD flag. The
 LAST-CHILD flag is non-nil when is ancestor sexp that owns the guide
 is the last child of its parent."
   (save-excursion
-    (let* ((parser-state (syntax-ppss))
+    ;; Note: I set `buffer-invisibility-spec' to nil here to work around a
+    ;; strange intermittent bug, where `goto-char' sometimes moves point
+    ;; to the beginning of the line, rather than the requested target
+    ;; location (i.e. the open paren of the parent sexp). It is probably
+    ;; related to the following excerpt of the "Invisible Text" section in
+    ;; the Emacs manual [1]:
+    ;;
+    ;;   "If a command ends with point inside or at the boundary of
+    ;;   invisible text, the main editing loop relocates point to one of
+    ;;   the two ends of the invisible text. Emacs chooses the direction
+    ;;   of relocation so that it is the same as the overall movement
+    ;;   direction of the command..."
+    ;;
+    ;; I've tried just setting `buffer-invisibility-spec' to nil for both
+    ;; `current-column' and `goto-char' but the bug still occurred, so
+    ;; I'm not exactly sure where the problem is.
+    ;;
+    ;; [1]: https://www.gnu.org/software/emacs/manual/html_node/elisp/Invisible-Text.html
+    (let* (buffer-invisibility-spec
+           (parser-state (syntax-ppss))
            (parent-sexp-beg (nth 1 parser-state))
-           (last-line-at-current-depth-p (elisp-tred-guide--last-line-at-current-depth-p))
-           ;; Note: In order for `current-column' to return the
-           ;; correct value (i.e. the number of indentation spaces on
-           ;; current line), we need to temporarily make the hidden
-           ;; indentation whitespace visible, by setting
-           ;; `buffer-invisibility-spec' to nil.
-           (guide-column (let (buffer-invisibility-spec) (current-column))))
-      (push (cons guide-column last-line-at-current-depth-p) guide-columns)
-      (if parent-sexp-beg
-          (progn
-            (goto-char parent-sexp-beg)
-            (elisp-tred-guide--compute-guide-columns guide-columns))
-        guide-columns))))
+           (last-line-at-current-depth-p (elisp-tred-guide--last-line-at-current-depth-p)))
+      (push (cons (current-column) last-line-at-current-depth-p) guide-columns)
+      ;; if: there is no parent sexp, finish and return the result
+      (if (null parent-sexp-beg)
+          guide-columns
+        ;; else: move point to beginning of parent sexp and recurse
+        (goto-char parent-sexp-beg)
+        (elisp-tred-guide--compute-guide-columns guide-columns)))))
 
 (defun elisp-tred-guide--make-guide-string (guide-columns)
   "Make a guide string from GUIDE-COLUMNS.
