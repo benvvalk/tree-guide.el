@@ -162,7 +162,18 @@ further information about the structure/meaning of GUIDE-COLUMNS."
   "Create an overlay that hides the leading whitespace on the current
 line, i.e. the indentation whitespace. If there is no leading
 whitespace on the current line, do nothing."
-  (let ((indentation (current-indentation)))
+  ;; When invoking `current-indentation':
+  ;;
+  ;; (1) We temporarily set `buffer-invisibility-spec' to nil because
+  ;; `current-indentation' ignores invisible whitespace.
+  ;;
+  ;; (2) We temporarily set `tab-width' to 1 because we want know the
+  ;; literal number of whitespace characters at the beginning of the
+  ;; line, not the resulting visual width of the indentation after
+  ;; expanding TABs.
+  (let* ((indentation (let ((tab-width 1)
+                            buffer-invisibility-spec)
+                        (current-indentation))))
     (when (> indentation 0)
       (save-excursion
         (let* ((overlay-beg (line-beginning-position))
