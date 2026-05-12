@@ -458,7 +458,26 @@ explanation."
       (setq-local buffer-invisibility-spec nil))))
 
 (defun elisp-tred-guide--indent-post-command-hook ()
-  (setq-local buffer-invisibility-spec t))
+  (setq-local buffer-invisibility-spec t)
+  ;; If point is inside invisible text, move point to the first visible
+;; character on the line.
+  ;;
+  ;; This code is added to work around some buggy/quirky behaviour of
+;; Emacs' line movement commands when interacting with invisible
+;; text. For example, if I position the cursor at the beginning of a
+;; `defun' line, and then move down by one line, the cursor _looks_
+;; like it moves to the first visible character on the next line, but
+;; the value returned by `current-column' is 0 (even when
+  ;; `buffer-invisibility-spec' is nil).
+;;
+  ;; This isn't a huge problem, but it prevents `lispy' from working as
+;; expected, because `lispy' commands can only be triggered when the
+;; cursor is positioned before the open paren of a sexp.  It also
+;; prevents `show-paren-mode' from working as intended.
+  (let (line-end-pos (line-end-position))
+    (while (and (not (eolp))
+                (invisible-p (point)))
+      (goto-char (next-char-property-change (point) line-end-pos)))))
 
 (defun elisp-tred-guide--indent-command-hooks-init ()
   (add-hook 'pre-command-hook #'elisp-tred-guide--indent-pre-command-hook nil t)
