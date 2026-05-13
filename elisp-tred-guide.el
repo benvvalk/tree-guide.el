@@ -71,8 +71,7 @@ siblings."
              (parent-sexp-end (elisp-tred-guide--parent-sexp-end-position))
              (parent-sexp-end-line-number (line-number-at-pos parent-sexp-end)))
         (while (< (line-number-at-pos) parent-sexp-end-line-number)
-          (next-logical-line)
-          (beginning-of-line)
+          (forward-line)
           ;; When we encounter a sibling line (i.e. a line with the same parent
           ;; start position)
           (when (eql (nth 1 (syntax-ppss)) parent-sexp-beg)
