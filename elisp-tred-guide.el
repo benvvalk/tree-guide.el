@@ -54,6 +54,49 @@ position (i.e. the value returned by `point-max')."
           (scan-sexps parent-sexp-beg 1)
         (scan-error (point-max))))))
 
+(defun elisp-tred-guide--beginning-next-sexp-position ()
+  (let ((orig-pos (point)))
+   (condition-case _
+       (let* ((ppss (syntax-ppss))
+              (inside-string-p (nth 3 ppss))
+              (string-start-pos (when inside-string-p (nth 8 ppss)))
+              ;; `scan-sexps' works fine to move over strings, just
+              ;; like lists and symbols. However, it doesn't work when
+              ;; the start position is inside a string.
+              (scan-start-pos (if inside-string-p
+                                  string-start-pos
+                                (point))))
+         ;; Tricky logic:
+         ;;
+         ;; Calling `scan-sexps' with a COUNT of 1 finds the *end*
+         ;; position of the next sexp. So to get the *beginning*
+         ;; position of the next sexp, we need to call `scan-sexps'
+         ;; again with a COUNT of -1, to scan backwards from the end
+         ;; position.
+         ;;
+         ;; However, if point was located exactly at the beginning of
+         ;; a sexp when we started, rather than some number of
+         ;; characters before, we will end up exactly where we
+         ;; started. So in that case, we need to call `scan-sexps'
+         ;; a second time.
+         ;;
+         ;; Note also: `scan-sexps' returns nil if we hit the end of
+         ;; the buffer before finding a next sexp. That's the reason
+         ;; for the `when-let's.
+         (when-let* ((next-sexp-end (scan-sexps scan-start-pos 1))
+                     (next-sexp-beg (scan-sexps next-sexp-end -1)))
+           ;; if: scanning forward by 1 sexp didn't move position
+           ;; forward (see explanation above).
+		   (if (<= next-sexp-beg (point))
+               (when-let* ((next-sexp-end2 (scan-sexps next-sexp-end 1)))
+                 ;; return beginning of next-next sexp
+                 (scan-sexps next-sexp-end2 pos -1))
+             ;; else: scanning forward by 1 sexp succeeded
+             next-sexp-beg)))
+     ;; `scan-error' is thrown when `scan-sexps' encounters unbalanced
+     ;; parens.
+     (scan-error nil))))
+
 (defun elisp-tred-guide--last-line-at-current-depth-p ()
   "Return non-nil if there is no next sibling sexp, string, comment, or
 blank line that appears on a subsequent line.
@@ -67,9 +110,86 @@ because we want to treat comment lines and blank lines as first class
 siblings."
   (catch 'done
     (save-excursion
-      (let* ((parent-sexp-beg (nth 1 (syntax-ppss)))
-             (parent-sexp-end (elisp-tred-guide--parent-sexp-end-position))
-             (parent-sexp-end-line-number (line-number-at-pos parent-sexp-end)))
+      (let* ((ppss (syntax-ppss))
+             (ppss-context (syntax-ppss-context ppss)))
+        (cond
+         ((eq ppss-context 'string) ;; cond: point is inside a string
+          (let ((orig-line-number (line-number-at-pos))
+                (string-start-pos (nth 8 ppss))
+                (string-end-pos (condition-case _
+                                    (scan-sexps string-start-pos 1)
+                                  ;; `scan-error' occurs when we hit end
+                                  ;; of buffer before finding closing
+                                  ;; quote for string
+                                  (scan-error (point-max))))
+                (string-end-line-number (line-number-at-pos string-end-pos)))
+            ;; If: We are not on the last line of the string, we can immediately
+            ;; return `nil', because the next line of the string is another line
+            ;; at the current depth.
+            (when (< orig-line-number string-end-line-number)
+              (throw 'done nil))
+            ;; Else: Move past the end of the string and continue to
+            ;; scan for siblings on subsequent lines.
+            (goto-char string-end-pos)))
+         ((null ppss-context) ;; cond: point is not inside string or comment
+          ;; move past end of current sexp
+		  (condition-case _
+              (goto-char (scan-sexps (point) 1))
+            ;; `scan-error' means we hit the end of buffer before
+            ;; finding the closing paren(s) for the initial sexp. That
+            ;; means there is no next sibling line and we can
+            ;; immediately return nil.
+            (scan-error
+             (throw 'done nil)))))
+
+        ;; scan forward for sibling sexp that starts on a subsequent line
+        (condition-case error-info
+            ;; Move forward over sibling sexps until we reach a new line,
+            ;; run out of siblings.
+            (progn
+              (while (and (goto-char (scan-sexps (point) 1))
+                          (= (line-number-at-pos) orig-line-number))
+                ()
+                )
+              ;; We found a sibling sexp on a new line.
+              (throw 'done nil))
+          ;; `scan-error' is thrown when `scan-sexps' encounters
+          ;; unbalanced parens during the scan. There are two cases
+          ;; to consider:
+          ;;
+          ;; (1) Unbalanced open parens. We reached the end of the
+          ;; buffer without finding matching closing parens for
+          ;; all open parens. This means that there does exist an
+          ;; (incomplete) next sibling sexp, so we can immediately
+          ;; return nil if the sexp starts on a line after
+          ;; `string-end-line-number'.
+          ;;
+          ;; (2) We encountered an unbalanced closing paren. Since
+          ;; we are passing 1 as the COUNT argument to
+          ;; `scan-sexps', it must mean that we hit the end of the
+          ;; parent sexp without encountering a next sibling
+          ;; sexp. This is *almost* enough information to
+          ;; immediately return `t' from this function. However,
+          ;; since `scan-sexps' skips over blank lines and comment
+          ;; lines, we need to fall through to the line-by-line
+          ;; scan below.
+          ;;
+          ;; To distinguish between cases (1) and (2), we need to
+          ;; look at the signal data provided in the `error-info'
+          ;; variable.  For `scan-error', `error-info' is a list
+          ;; of the form '(scan-error MESSAGE START END), where
+          ;; START and END are the bounds of the incomplete
+          ;; sexp. We can distinguish between cases (1) and (2) by
+          ;; the fact that END will be equal to the end-of-buffer
+          ;; position for case (1), but never for case (2).
+          (scan-error
+           (let ((end (car (last error-info))))
+             (when (= end (point-max))
+               (throw 'done nil)))))
+
+        (let* ((parent-sexp-beg (nth 1 (syntax-ppss)))
+               (parent-sexp-end (elisp-tred-guide--parent-sexp-end-position))
+               (parent-sexp-end-line-number (line-number-at-pos parent-sexp-end)))
         (while (< (line-number-at-pos) parent-sexp-end-line-number)
           (next-logical-line)
           (beginning-of-line)
