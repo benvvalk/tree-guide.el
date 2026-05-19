@@ -80,6 +80,42 @@ siblings."
         ;; sexp, before encountering another sibling line.
         t))))
 
+(defun elisp-tred-guide--compute-guide-offset-and-type (sexp-beg parent-sexp-beg)
+  "Calculate the guide offset and type for the sexp beginning at buffer
+position SEXP-BEG. PARENT-SEXP-BEG is the start position of the parent
+sexp that contains SEXP-BEG, or nil if SEXP-BEG is a top-level sexp.
+
+The return value is a cons cell of the form (OFFSET
+. GUIDE-TYPE-LAST-P), where OFFSET is an integer specifying how many
+space characters to insert before the guide, and GUIDE-TYPE-LAST-P is
+a boolean indicating if SEXP-BEG is the last child line of its parent
+sexp."
+  (save-excursion
+    (goto-char sexp-beg)
+    (let* (buffer-invisibility-spec
+           (parent-on-same-line-p (when parent-sexp-beg
+                                        (save-excursion
+                                          ;; fast jump to beginning of line
+                                          (forward-line 0)
+                                          (<= (point) parent-sexp-beg))))
+           (guide-type-last-p (elisp-tred-guide--last-line-at-current-depth-p)))
+      ;; If: parent sexp starts on same line, guide offset is offset from
+      ;; start of parent sexp, minus 1 to make room for parent guide
+      ;; char (i.e. `|' or ` ').
+      ;;
+      ;; Else: parent sexp starts on a previous line. Guide offset is
+      ;; distance from first non-whitespace char on line, plus
+      ;; width of parent guide's handle char(s).
+      (cons (if parent-on-same-line-p
+                (1- (- sexp-beg parent-sexp-beg))
+              (let ((indentation (current-indentation))
+                    (column-pos (save-excursion
+                                  (goto-char sexp-beg)
+                                  (current-column))))
+                (+ (- column-pos indentation)
+                   elisp-tred-guide-min-handle-width)))
+            guide-type-last-p))))
+
 (defun elisp-tred-guide--compute-guide-columns (&optional guide-columns)
   "Compute the column positions for the guides on the current line.
 
@@ -113,8 +149,10 @@ is the last child of its parent."
     (let* (buffer-invisibility-spec
            (parser-state (syntax-ppss))
            (parent-sexp-beg (nth 1 parser-state))
-           (last-line-at-current-depth-p (elisp-tred-guide--last-line-at-current-depth-p)))
-      (push (cons (current-column) last-line-at-current-depth-p) guide-columns)
+           (guide-offset (elisp-tred-guide--compute-guide-offset-and-type
+                          (point)
+                          parent-sexp-beg)))
+      (push guide-offset guide-columns)
       ;; if: there is no parent sexp, finish and return the result
       (if (null parent-sexp-beg)
           guide-columns
@@ -130,31 +168,32 @@ will be '| | ╰'.
 
 See the docstring for `elisp-tred-guide--compute-guide-columns' for
 further information about the structure/meaning of GUIDE-COLUMNS."
-  (let (guide-string-parts)
-    (dotimes (i (length guide-columns))
-      (let* ((guide-column-prev (when (> i 0) (car (nth (1- i) guide-columns))))
-             (guide-column (car (nth i guide-columns)))
-             (guide-column-next (car (nth (1+ i) guide-columns)))
-             (guide-last-p (cdr (nth i guide-columns)))
-             (guide-char (if guide-column-next
-                             (if guide-last-p
-                                 elisp-tred-guide--guide-char-space
-                               elisp-tred-guide--guide-char-without-handle)
-                           (if guide-last-p
-                               elisp-tred-guide--guide-char-with-handle-last
-                             elisp-tred-guide--guide-char-with-handle)))
-             (guide-extension-char (if guide-column-next
-                                       elisp-tred-guide--guide-char-space
-                                     elisp-tred-guide--guide-char-handle))
-             (handle-width (if guide-column-prev
-                               (max (1- (- guide-column guide-column-prev))
-                                    elisp-tred-guide-min-handle-width)
-                             elisp-tred-guide-min-handle-width)))
-        (when (or (> i 0) elisp-tred-guide-enable-top-level-guides)
-          (push (concat guide-char
-                        (string-join
-                         (make-list handle-width guide-extension-char)))
-                guide-string-parts))))
+  (let (guide-string-parts
+        (num-guides (length guide-columns)))
+    (dotimes (i num-guides)
+      (let* ((leftmost-guide-p (= i 0))
+             (rightmost-guide-p (>= i (1- num-guides)))
+             (guide-offset (car (nth i guide-columns)))
+             (guide-type-last-p (cdr (nth i guide-columns)))
+             (guide-char (if rightmost-guide-p
+                              (if guide-type-last-p
+                                  elisp-tred-guide--guide-char-with-handle-last
+                                elisp-tred-guide--guide-char-with-handle)
+                            (if guide-type-last-p
+                                elisp-tred-guide--guide-char-space
+                              elisp-tred-guide--guide-char-without-handle)))
+             (num-padding-chars (max
+                                 guide-offset
+                                 (if rightmost-guide-p
+                                     elisp-tred-guide-min-handle-width
+                                   0)))
+             (padding-char (if rightmost-guide-p
+                               elisp-tred-guide--guide-char-handle
+                             elisp-tred-guide--guide-char-space)))
+        (push (concat
+               guide-char
+               (string-join (make-list num-padding-chars padding-char)))
+              guide-string-parts)))
     (string-join (nreverse guide-string-parts))))
 
 (defun elisp-tred-guide--hide-indentation-for-current-line ()
