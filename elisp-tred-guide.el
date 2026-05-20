@@ -118,10 +118,10 @@ sexp."
                    elisp-tred-guide-min-handle-width)))
             guide-type-last-p))))
 
-(defun elisp-tred-guide--compute-guide-offsets-and-types (&optional guide-columns)
+(defun elisp-tred-guide--compute-guide-offsets-and-types (&optional guide-offsets-and-types)
   "Compute the column positions for the guides on the current line.
 
-The GUIDE-COLUMNS argument is used internally for passing intermediate
+The GUIDE-OFFSETS-AND-TYPES argument is used internally for passing intermediate
 results during recursive calls, and should normally be omitted when
 calling this function from other functions.
 
@@ -154,29 +154,29 @@ is the last child of its parent."
            (guide-offset (elisp-tred-guide--compute-guide-offset-and-type
                           (point)
                           parent-sexp-beg)))
-      (push guide-offset guide-columns)
+      (push guide-offset guide-offsets-and-types)
       ;; if: there is no parent sexp, finish and return the result
       (if (null parent-sexp-beg)
-          guide-columns
+          guide-offsets-and-types
         ;; else: move point to beginning of parent sexp and recurse
         (goto-char parent-sexp-beg)
-        (elisp-tred-guide--compute-guide-offsets-and-types guide-columns)))))
+        (elisp-tred-guide--compute-guide-offsets-and-types guide-offsets-and-types)))))
 
-(defun elisp-tred-guide--make-guide-string (guide-columns)
-  "Make a guide string from GUIDE-COLUMNS.
+(defun elisp-tred-guide--make-guide-string (guide-offsets-and-types)
+  "Make a guide string from GUIDE-OFFSETS-AND-TYPES.
 
-For example, if GUIDE-COLUMNS is ((1) (3) (6 . t)), the return value
+For example, if GUIDE-OFFSETS-AND-TYPES is ((1) (3) (6 . t)), the return value
 will be '| | ╰'.
 
 See the docstring for `elisp-tred-guide--compute-guide-offsets-and-types' for
-further information about the structure/meaning of GUIDE-COLUMNS."
+further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
   (let (guide-string-parts
-        (num-guides (length guide-columns)))
+        (num-guides (length guide-offsets-and-types)))
     (dotimes (i num-guides)
       (let* ((leftmost-guide-p (= i 0))
              (rightmost-guide-p (>= i (1- num-guides)))
-             (guide-offset (car (nth i guide-columns)))
-             (guide-type-last-p (cdr (nth i guide-columns)))
+             (guide-offset (car (nth i guide-offsets-and-types)))
+             (guide-type-last-p (cdr (nth i guide-offsets-and-types)))
              (guide-char (if rightmost-guide-p
                               (if guide-type-last-p
                                   elisp-tred-guide--guide-char-with-handle-last
@@ -228,8 +228,8 @@ whitespace on the current line, do nothing."
 current line."
   (let (buffer-invisibility-spec)
     (move-to-column (current-indentation)))
-  (let* ((guide-columns (elisp-tred-guide--compute-guide-offsets-and-types))
-         (guide-string (elisp-tred-guide--make-guide-string guide-columns))
+  (let* ((guide-offsets-and-types (elisp-tred-guide--compute-guide-offsets-and-types))
+         (guide-string (elisp-tred-guide--make-guide-string guide-offsets-and-types))
          (overlay-beg (line-beginning-position))
          (overlay-end (min (1+ (line-end-position)) (point-max)))
          (overlay (make-overlay overlay-beg overlay-end)))
