@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (require 'easy-mmode) ;; for `define-minor-mode'
 
 ;;; Guide rendering
