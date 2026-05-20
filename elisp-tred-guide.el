@@ -116,7 +116,7 @@ sexp."
                    elisp-tred-guide-min-handle-width)))
             guide-type-last-p))))
 
-(defun elisp-tred-guide--compute-guide-columns (&optional guide-columns)
+(defun elisp-tred-guide--compute-guide-offsets-and-types (&optional guide-columns)
   "Compute the column positions for the guides on the current line.
 
 The GUIDE-COLUMNS argument is used internally for passing intermediate
@@ -158,7 +158,7 @@ is the last child of its parent."
           guide-columns
         ;; else: move point to beginning of parent sexp and recurse
         (goto-char parent-sexp-beg)
-        (elisp-tred-guide--compute-guide-columns guide-columns)))))
+        (elisp-tred-guide--compute-guide-offsets-and-types guide-columns)))))
 
 (defun elisp-tred-guide--make-guide-string (guide-columns)
   "Make a guide string from GUIDE-COLUMNS.
@@ -166,7 +166,7 @@ is the last child of its parent."
 For example, if GUIDE-COLUMNS is ((1) (3) (6 . t)), the return value
 will be '| | ╰'.
 
-See the docstring for `elisp-tred-guide--compute-guide-columns' for
+See the docstring for `elisp-tred-guide--compute-guide-offsets-and-types' for
 further information about the structure/meaning of GUIDE-COLUMNS."
   (let (guide-string-parts
         (num-guides (length guide-columns)))
@@ -226,7 +226,7 @@ whitespace on the current line, do nothing."
 current line."
   (let (buffer-invisibility-spec)
     (move-to-column (current-indentation)))
-  (let* ((guide-columns (elisp-tred-guide--compute-guide-columns))
+  (let* ((guide-columns (elisp-tred-guide--compute-guide-offsets-and-types))
          (guide-string (elisp-tred-guide--make-guide-string guide-columns))
          (overlay-beg (line-beginning-position))
          (overlay-end (min (1+ (line-end-position)) (point-max)))
