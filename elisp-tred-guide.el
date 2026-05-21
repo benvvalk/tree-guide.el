@@ -173,8 +173,7 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
   (let (guide-string-parts
         (num-guides (length guide-offsets-and-types)))
     (dotimes (i num-guides)
-      (let* ((leftmost-guide-p (= i 0))
-             (rightmost-guide-p (>= i (1- num-guides)))
+      (let* ((rightmost-guide-p (>= i (1- num-guides)))
              (guide-offset (car (nth i guide-offsets-and-types)))
              (guide-type-last-p (cdr (nth i guide-offsets-and-types)))
              (guide-char (if rightmost-guide-p
