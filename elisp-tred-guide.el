@@ -6,7 +6,7 @@
 ;;
 ;; For each logical line in the buffer, create a guide overlay.
 
-(defcustom elisp-tred-guide-min-handle-width 1
+(defcustom elisp-tred-guide-handle-width 1
   "Minimum width of guide handle, in characters.")
 
 (defcustom elisp-tred-guide-enable-top-level-guides nil
@@ -115,7 +115,7 @@ sexp."
                                   (goto-char sexp-beg)
                                   (current-column))))
                 (+ (- column-pos indentation)
-                   elisp-tred-guide-min-handle-width)))
+                   elisp-tred-guide-handle-width)))
             guide-type-last-p))))
 
 (defun elisp-tred-guide--compute-guide-offsets-and-types (&optional guide-offsets-and-types)
@@ -186,7 +186,7 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
              (num-padding-chars (max
                                  guide-offset
                                  (if rightmost-guide-p
-                                     elisp-tred-guide-min-handle-width
+                                     elisp-tred-guide-handle-width
                                    0)))
              (padding-char (if rightmost-guide-p
                                elisp-tred-guide--guide-char-handle
