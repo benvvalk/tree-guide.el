@@ -9,8 +9,11 @@
 (defcustom elisp-tred-guide-handle-width 1
   "Minimum width of guide handle, in characters.")
 
-(defcustom elisp-tred-guide-enable-top-level-guides nil
-  "Show guides for top level sexps.")
+(defcustom elisp-tred-guide-min-depth 1
+  "The minimum depth for which to render guides.
+
+Top-level sexps are at depth 0, children of top-level sexps are at
+depth 1, and so on.")
 
 (defvar elisp-tred-guide--guide-char-with-handle "├")
 (defvar elisp-tred-guide--guide-char-with-handle-last "╰")
@@ -191,10 +194,11 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
              (padding-char (if rightmost-guide-p
                                elisp-tred-guide--guide-char-handle
                              elisp-tred-guide--guide-char-space)))
-        (push (concat
-               guide-char
-               (string-join (make-list num-padding-chars padding-char)))
-              guide-string-parts)))
+        (when (>= i elisp-tred-guide-min-depth)
+          (push (concat
+                guide-char
+                (string-join (make-list num-padding-chars padding-char)))
+               guide-string-parts))))
     (string-join (nreverse guide-string-parts))))
 
 (defun elisp-tred-guide--hide-indentation-for-current-line ()
