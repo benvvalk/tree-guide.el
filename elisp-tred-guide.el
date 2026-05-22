@@ -271,6 +271,24 @@ buffer."
 ;; portion of the current window, at which time we determine which
 ;; dirty lines are visible and update them.
 
+(defvar-local elisp-tred-guide--update-timer nil
+  "Idle timer that updates the guides, when the user edits the buffer.")
+
+(defun elisp-tred-guide--update-timer-rearm ()
+  "Start idle timer that updates guides when user edits buffer."
+  (elisp-tred-guide--update-timer-teardown)
+  (setq elisp-tred-guide--update-timer
+        (run-with-idle-timer 0.05 ;; seconds after Emacs becomes idle
+                             t ;; repeat
+                             #'elisp-tred-guide--update-guides-if-buffer-changed
+                             (current-buffer))))
+
+(defun elisp-tred-guide--update-timer-teardown ()
+  "Stop idle timer that updates guides when user edits buffer."
+  (when (timerp elisp-tred-guide--update-timer)
+    (cancel-timer elisp-tred-guide--update-timer)
+    (setq elisp-tred-guide--update-timer nil)))
+
 (defvar-local elisp-tred-guide--dirty-line-ranges nil
   "The line ranges where the guides are out-of-date due the user
 making edits in the buffer.")
@@ -393,44 +411,40 @@ number and the CDR is the ending line number (inclusive)."
                     (elisp-tred-guide--line-ranges-subtract dirty-line-range line-range))
                   elisp-tred-guide--dirty-line-ranges))))
 
-(defun elisp-tred-guide--compute-visible-line-ranges-that-are-dirty ()
-  "Return a list of line ranges that are both visible in the current
-window and marked as dirty."
-  (let ((visible-line-range (elisp-tred-guide--visible-line-range))
-        result)
-    (dolist (dirty-line-range elisp-tred-guide--dirty-line-ranges)
-      (when-let ((intersection-range (elisp-tred-guide--line-ranges-intersect
-                                      visible-line-range
-                                      dirty-line-range)))
-        (push intersection-range result)))
-    result))
+(defun elisp-tred-guide--update-dirty-lines-overlapping-range (line-range)
+  "Update the guides on 'dirty' lines that overlap LINE-RANGE."
+  (dolist (dirty-line-range elisp-tred-guide--dirty-line-ranges)
+    (when-let ((intersection-range
+                (elisp-tred-guide--line-ranges-intersect
+                 dirty-line-range
+                 line-range)))
+      (elisp-tred-guide--destroy-guides-in-line-range intersection-range)
+      (elisp-tred-guide--create-guides-in-line-range intersection-range)
+      (elisp-tred-guide--mark-line-ranges-as-clean (list intersection-range)))))
 
-(defun elisp-tred-guide--update-visible-lines-that-are-dirty ()
-  "Update the guides for the lines that are both visible in the
-current window and marked as 'dirty'."
-  (let ((visible-line-ranges-that-are-dirty
-         (elisp-tred-guide--compute-visible-line-ranges-that-are-dirty)))
-    (dolist (dirty-line-range visible-line-ranges-that-are-dirty)
-      (elisp-tred-guide--destroy-guides-in-line-range dirty-line-range)
-      (elisp-tred-guide--create-guides-in-line-range dirty-line-range))
-    (elisp-tred-guide--mark-line-ranges-as-clean visible-line-ranges-that-are-dirty)))
-
-(defun elisp-tred-guide--pre-redisplay-hook (&rest _)
-  "Update the guides, in response to user edits in the buffer.
-
-This function is called by the built-in `pre-redisplay-functions'
-hook, which gets called immediately before the Emacs display engine
-re-renders the text in the current window."
-  ;; Note: We need to check `buffer-chars-modified-tick' here to avoid
-  ;; doing unnecessary work, because Emacs may invoke
-  ;; `pre-redisplay-functions' multiple times for the same redisplay
-  ;; event.
-  (unless (eq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick))
-    ;; If the buffer contents have changed in any way, naively
-    ;; mark all lines in the buffer as dirty.
-    (elisp-tred-guide--mark-all-buffer-lines-dirty)
-    (setq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick)))
-  (elisp-tred-guide--update-visible-lines-that-are-dirty))
+(defun elisp-tred-guide--update-guides-if-buffer-changed (buffer)
+  "Update the guides, in response to user edits in the buffer."
+  (with-current-buffer buffer
+    (unless (eq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick))
+      ;; If the buffer contents have changed in any way, naively
+      ;; mark all lines in the buffer as dirty.
+      (elisp-tred-guide--mark-all-buffer-lines-dirty)
+      (setq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick)))
+    (while-no-input
+      (let* ((update-radius 5)
+             (line-number-center (line-number-at-pos))
+             (line-number-min (line-number-at-pos (point-min)))
+             (line-number-max (line-number-at-pos (point-max)))
+             (update-range (cons line-number-center line-number-center)))
+        (while (or (> (car update-range) line-number-min)
+                   (< (cdr update-range) line-number-max))
+          (setcar update-range
+                  (max (- (car update-range) update-radius)
+                       line-number-min))
+          (setcdr update-range
+                  (min (+ (cdr update-range) update-radius)
+                       line-number-max))
+          (elisp-tred-guide--update-dirty-lines-overlapping-range update-range))))))
 
 ;;; Integration with indentation functions
 ;;
@@ -535,17 +549,40 @@ explanation."
 (defun elisp-tred-guide--mode-init ()
   "Performs necessary initialization when enabling Elisp-Tred-Guide
 mode."
-  (add-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook nil t)
   (elisp-tred-guide--indent-advice-init)
   (elisp-tred-guide--indent-command-hooks-init)
-  (elisp-tred-guide--mark-all-buffer-lines-dirty))
+  (elisp-tred-guide--update-timer-rearm)
+  ;; Note: If one wants an idle timer to fire reliably after every buffer
+  ;; edit, the accepted wisdom seems is that you should re-arm the
+  ;; timer in an `after-change-functions' hook. For concrete examples,
+  ;; see the code example at [1] and/or the source code for
+  ;; `aggressive-indent-mode'.
+  ;;
+  ;; I'm not sure why using `after-change-functions' is necessary,
+  ;; versus the more obvious/straightforward approach of just creating a
+  ;; repeating idle timer once, when the mode is first enabled. In
+  ;; practice, I can confirm that the simpler approach does not work
+  ;; reliably -- sometimes the idle timer fails to fire after buffer
+  ;; edits, and the user has to press an additional key before the
+  ;; timer fires. It could be a subtle timing issue, or it could be that
+  ;; the REPEAT parameter of `run-with-idle-timer' is bugged.
+  ;;
+  ;; [1]: https://emacs.stackexchange.com/a/71615
+  (add-hook 'after-change-functions #'elisp-tred-guide--update-timer-rearm nil t)
+  (add-hook 'after-revert-hook #'elisp-tred-guide--mark-all-buffer-lines-dirty nil t)
+  (add-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown nil t))
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
-  (remove-hook 'pre-redisplay-functions #'elisp-tred-guide--pre-redisplay-hook t)
   (elisp-tred-guide--indent-advice-init)
   (elisp-tred-guide--indent-command-hooks-teardown)
-  (elisp-tred-guide--destroy-all))
+  (elisp-tred-guide--destroy-all)
+  (remove-hook 'after-change-functions #'elisp-tred-guide--update-timer-rearm t)
+  (remove-hook 'after-revert-hook #'elisp-tred-guide--mark-all-buffer-lines-dirty t)
+  (remove-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown t)
+  ;; Note: We need to reset this variable to nil, to ensure that all
+  ;; guides are re-created if user turns the mode off and on again.
+  (setq elisp-tred-guide--buffer-chars-modified-tick nil))
 
 (define-minor-mode elisp-tred-guide-mode
   "Display tree guides for elisp code."
