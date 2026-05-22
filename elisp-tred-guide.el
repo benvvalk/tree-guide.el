@@ -295,12 +295,12 @@ redisplay event.")
   (let ((line-beg (car range))
         (line-end (cdr range)))
     (save-excursion
-	 (goto-line line-beg)
-     (while (and (<= (line-number-at-pos) line-end)
-                 (not (eobp)))
-       (elisp-tred-guide--hide-indentation-for-current-line)
-       (elisp-tred-guide--create-for-current-line)
-       (forward-line)))))
+	  (goto-line line-beg)
+      (while (and (<= (line-number-at-pos) line-end)
+                  (not (eobp)))
+        (elisp-tred-guide--hide-indentation-for-current-line)
+        (elisp-tred-guide--create-for-current-line)
+        (forward-line)))))
 
 (defun elisp-tred-guide--destroy-guides-in-line-range (range)
   "Destroy guides for the line numbers contained in RANGE."
