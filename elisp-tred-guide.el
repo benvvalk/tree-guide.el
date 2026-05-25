@@ -574,7 +574,7 @@ mode."
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
-  (elisp-tred-guide--indent-advice-init)
+  (elisp-tred-guide--indent-advice-teardown)
   (elisp-tred-guide--indent-command-hooks-teardown)
   (elisp-tred-guide--destroy-all)
   (remove-hook 'after-change-functions #'elisp-tred-guide--update-timer-rearm t)
