@@ -201,10 +201,25 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
                guide-string-parts))))
     (string-join (nreverse guide-string-parts))))
 
-(defun elisp-tred-guide--hide-indentation-for-current-line ()
-  "Create an overlay that hides the leading whitespace on the current
-line, i.e. the indentation whitespace. If there is no leading
-whitespace on the current line, do nothing."
+(defun elisp-tred-guide--update-or-create-indentation-overlay-for-current-line ()
+  "Create or update the indentation overlay for the current line.
+
+The purpose of the indentation overlays is to hide the leading
+whitespace on each line, so that we can show the tree guides
+instead. The indentation overlays need to be updated whenever lines
+are re-indented, and whenever new lines are inserted in the buffer.
+
+This function returns non-nil if it makes any changes related to the
+indentation overlay on the current line, such as creating a missing
+indentation overlay, updating the start/end positions of an existing
+overlay, or deleting duplicate/extraneous overlays that should no
+longer exist. (Extraneous overlays can be introduced by the user's
+buffer-editing activity, such as inserting a newline that splits an
+existing line, or deleting the whitespace at the beginning of a line.)
+
+A return value of nil means that the indentation overlay for the
+current line already exists and is up-to-date, and there were no
+extraneous overlays that needed to be removed."
   ;; When invoking `current-indentation':
   ;;
   ;; (1) We temporarily set `buffer-invisibility-spec' to nil because
@@ -212,33 +227,232 @@ whitespace on the current line, do nothing."
   ;;
   ;; (2) We temporarily set `tab-width' to 1 because we want know the
   ;; literal number of whitespace characters at the beginning of the
-  ;; line, not the resulting visual width of the indentation after
-  ;; expanding TABs.
-  (let* ((indentation (let ((tab-width 1)
-                            buffer-invisibility-spec)
-                        (current-indentation))))
-    (when (> indentation 0)
-      (save-excursion
-        (let* ((overlay-beg (line-beginning-position))
-               (overlay-end (+ overlay-beg indentation))
-               (overlay (make-overlay overlay-beg overlay-end nil t nil)))
+  ;; line, not the resulting visual width after expanding TABs.
+  (let* ((indent-column (let ((tab-width 1)
+                              buffer-invisibility-spec)
+                          (current-indentation)))
+         (line-end (save-excursion (forward-line 1) (point)))
+         (line-beg (save-excursion (forward-line 0) (point)))
+         (existing-overlays (seq-filter
+                             (lambda (overlay)
+                               (eq (overlay-get overlay 'category)
+                                   'elisp-tred-indentation))
+                             (overlays-in line-beg line-end))))
+    ;; If: there is no leading whitespace on current line, we should
+    ;; delete any existing indentation overlays. The return value should
+    ;; be non-nil if any overlays were deleted, to indicate that an update
+    ;; occurred.
+    (if (= indent-column 0)
+        (when existing-overlays
+          (mapc #'delete-overlay existing-overlays))
+      ;; Else: current line starts with one or more whitespace characters.
+      ;;
+      ;; If there is exactly one existing overlay whose start/end position
+      ;; exactly matches the start/end of the leading whitespace on the
+      ;; current line, then nothing needs to be updated, and we should
+      ;; return nil to indicate that no update occurred.
+      ;;
+      ;; Otherwise, delete all existing overlays, create a new
+      ;; overlay with the correct start/end positions, and return
+      ;; non-nil to indicate that an update occurred.
+      (unless (and (= (length existing-overlays) 1)
+                   (= (overlay-start (car existing-overlays)) line-beg)
+                   (= (overlay-end (car existing-overlays)) (+ line-beg indent-column)))
+        (mapc #'delete-overlay existing-overlays)
+        (let* ((overlay-end (+ line-beg indent-column))
+               (overlay (make-overlay line-beg overlay-end nil t nil)))
           (overlay-put overlay 'category 'elisp-tred-indentation)
           (overlay-put overlay 'evaporate t)
           (overlay-put overlay 'invisible t))))))
 
-(defun elisp-tred-guide--create-for-current-line ()
-  "Create an overlay which displays the guide string for the
-current line."
-  (let (buffer-invisibility-spec)
-    (move-to-column (current-indentation)))
-  (let* ((guide-offsets-and-types (elisp-tred-guide--compute-guide-offsets-and-types))
-         (guide-string (elisp-tred-guide--make-guide-string guide-offsets-and-types))
-         (overlay-beg (line-beginning-position))
-         (overlay-end (min (1+ (line-end-position)) (point-max)))
-         (overlay (make-overlay overlay-beg overlay-end)))
-    (overlay-put overlay 'category 'elisp-tred-guide)
-    (overlay-put overlay 'evaporate t)
-    (overlay-put overlay 'line-prefix guide-string)))
+(defun elisp-tred-guide--update-or-create-guide-overlay-for-current-line ()
+  "Create or update the guide overlay for the current line.
+
+The guide overlays display virtual tree guide characters at the
+beginning of each line, which show the parent/child relationships
+between sexps in the buffer. The guide overlays need to be updated
+when the parent/child relationships between sexps change, and when new
+lines are inserted in the buffer.
+
+This function returns non-nil if it makes any changes related to the
+guide overlay for the current line, such as: creating a missing guide
+overlay, updating the guide characters displayed by an existing
+overlay, or deleting duplicate/extranedeous overlays that should no
+longer exist. (Extraneous overlays can be introduced by the user's
+buffer-editing activity, such as inserting a newline that splits an
+existing line, or deleting the whitespace at the beginning of a line.)
+
+A return value of nil means that the guide overlay for the current
+line already existing, is displaying the correct guide characters, and
+there were no extraneous overlays that needed to be removed."
+  (save-excursion
+    ;; Notes:
+    ;; 
+    ;; (1) `elisp-tred-guide--compute-guide-offsets-and-types' requires
+    ;; point to be located immediately before the first non-whitespace
+    ;; character on the current line.
+    ;;
+    ;; (2) We need to temporarily set `buffer-invisibility-spec' to nil
+    ;; because `current-indentation' ignores invisible whitespace chars.
+    (let (buffer-invisibility-spec)
+      (move-to-column (current-indentation)))
+    (let* ((guide-offsets-and-types (elisp-tred-guide--compute-guide-offsets-and-types))
+           (guide-string (elisp-tred-guide--make-guide-string guide-offsets-and-types))
+           (line-end (save-excursion (forward-line 1) (point)))
+           (line-beg (save-excursion (forward-line 0) (point)))
+           (existing-overlays (seq-filter
+                               (lambda (overlay)
+                                 (eq (overlay-get overlay 'category)
+                                     'elisp-tred-guide))
+                               (overlays-in line-beg line-end))))
+      ;; If: number of guides on the current line is <=
+      ;; `elisp-tred-guide-min-depth', there are no guides that need to be
+      ;; displayed at the beginning of this line. We need to delete any
+      ;; existing overlays, and return non-nil if any overlays were deleted.
+      (if (<= (length guide-offsets-and-types) elisp-tred-guide-min-depth)
+          (when existing-overlays
+            (mapc #'delete-overlay existing-overlays))
+        ;; Else: One or more guides need to be displayed at the
+        ;; beginning of this line.
+        ;;
+        ;; Unless: there is exactly one existing overlay and it is already
+        ;; displaying the correct guide string, delete all existing overlays
+        ;; and create a new one with the correct guide string.
+        (unless (and (= (length existing-overlays) 1)
+                     (string-equal (overlay-get (car existing-overlays) 'line-prefix) guide-string))
+          (mapc #'delete-overlay existing-overlays)
+          (let* ((overlay (make-overlay line-beg line-end nil nil t)))
+            (overlay-put overlay 'category 'elisp-tred-guide)
+            (overlay-put overlay 'evaporate t)
+            (overlay-put overlay 'line-prefix guide-string)))))))
+
+(defun elisp-tred-guide--update-or-create-overlays-for-current-line ()
+  "Create or update the indentation and guide overlays for the current line."
+  (let ((indentation-overlay-updated-p
+         (elisp-tred-guide--update-or-create-indentation-overlay-for-current-line))
+        (guide-overlay-updated-p
+         (elisp-tred-guide--update-or-create-guide-overlay-for-current-line)))
+    (or indentation-overlay-updated-p
+        guide-overlay-updated-p)))
+
+(defun elisp-tred-guide--update-or-create-overlays-for-change-region (change-region)
+  "Update indentation and guide overlays in response to a buffer edit.
+
+CHANGE-REGION is a cons cell of the form (BEG . END), which describes
+the buffer range where the text content has changed.
+
+This function halts its work as soon as any user input occurs, such as
+pressing a key. This is important to keep Emacs responsive, because
+some types of buffer edits can require updating a large number of
+lines. For example, inserting an unbalanced open paren (`(') at the
+beginning of the buffer requires updating the indentation and guide
+overlays on every (logical) line of the buffer!
+
+If this function is interrupted by user input, it will return a list
+of CHANGE-REGIONs that we can feed back into this function to resume
+the work. This ensures that we are able to make incremental progress
+on very large updates.
+
+ This function returns nil if it successfully completes all
+indentation/guide overlay updates without being interrupted by
+user input."
+  ;; The RESUME-* variables are used to record where we should
+  ;; resume updating lines, if we are interrupted by user input
+  ;; (e.g. a key press):
+  ;;
+  ;; * RESUME-BEFORE: The buffer position we should work backwards from,
+;; when updating lines that precede CHANGE-REGION.
+;;
+  ;; * RESUME-BEG / RESUME-AFTER: The sub-range of CHANGE-REGION where
+  ;; we still need to update the indentation/guide overlays.
+  ;;
+  ;; * RESUME-AFTER: The buffer position we should work forwards from,
+  ;; when updating lines that follow CHANGE-REGION.
+  (let* ((beg (car change-region))
+         (end (cdr change-region))
+         (resume-before-pos (save-excursion
+                                  (goto-char beg)
+                                  (when (= (forward-line -1) 0)
+                                    (point))))
+         (resume-before (set-marker (make-marker) resume-before-pos))
+         (resume-beg (set-marker (make-marker) beg))
+         (resume-end (set-marker (make-marker) end))
+         (resume-after-pos (save-excursion
+                                  (goto-char end)
+                                  (forward-line 1)
+                                  (when (not (eobp))
+                                    (point))))
+         (resume-after (set-marker (make-marker) resume-after-pos)))
+    (save-excursion
+      ;; We use `while-no-input' to interrupt the work when Emacs receives
+;; user input (e.g. a key press).
+      (while-no-input
+        ;; Go to beginning of first line overlapping the change
+        ;; region.
+        (goto-char beg)
+        (forward-line 0)
+        ;; Unconditionally update all lines that overlap the change
+        ;; region.
+		(while (and (not (eobp)) (<= (point) end))
+          (elisp-tred-guide--update-or-create-overlays-for-current-line)
+          (forward-line)
+          ;; Save progress after updating each line, in case we are
+          ;; interrupted by user input.
+          (set-marker resume-beg (point))
+          (when (> (point) end)
+            (set-marker resume-end (marker-position resume-beg))))
+        (set-marker resume-beg nil)
+        (set-marker resume-end nil)
+        ;; Update lines following the change region one-by-one,
+        ;; until we encounter a line where the existing indentation
+        ;; and guide overlays are already up-to-date, or we reach the
+        ;; end of the buffer.
+        (when (marker-position resume-after)
+          (while (and (not (eobp))
+                      (elisp-tred-guide--update-or-create-overlays-for-current-line))
+           (forward-line 1)
+           ;; Save progress after updating each line, in case we are
+           ;; interrupted by user input.
+           (set-marker resume-after (point))))
+        (set-marker resume-after nil)
+        ;; Update lines preceding the change region one-by-one,
+        ;; until we encounter a line where the existing indentation
+        ;; and guide overlays are already up-to-date, or we reach the
+        ;; beginning of the buffer.
+        (when (marker-position resume-before)
+		  (goto-char resume-before)
+          (while (and (not (bobp))
+                      (elisp-tred-guide--update-or-create-overlays-for-current-line))
+            (forward-line -1)
+            ;; Save progress after updating each line, in case we are
+            ;; interrupted by user input.
+            (set-marker resume-before (point)))
+          (set-marker resume-before nil))))
+    ;; Return a list of ranges that tells us where we need to resume
+    ;; the line updates on the next idle timer event, if we were
+    ;; interrupted. We may need to return up to two ranges, because
+    ;; we need to update the lines both before and after the change
+    ;; region.
+    ;;
+    ;; If we managed to update all lines before being interrupted by
+    ;; user input, return nil.
+    (let (resume-ranges)
+      ;; If: `resume-beg' and `resume-end' are non-nil, it means we
+      ;; didn't finish updating the lines within the change region. We
+      ;; don't need to explicitly include
+      ;; `resume-before'/`resume-after' in the returned list of
+      ;; ranges, because those ranges will automatically be recreated.
+      (if (and (marker-position resume-beg) (marker-position resume-end))
+          (push (cons resume-beg resume-end) resume-ranges)
+        ;; Else: We finished updating the lines within the change region.
+        ;; Return the ranges for `resume-before' and/or `resume-after',
+        ;; depending on how many lines we managed to update before
+        ;; getting interrupted.
+        (when (marker-position resume-after)
+          (push (cons resume-after resume-after) resume-ranges))
+        (when (marker-position resume-before)
+          (push (cons resume-before resume-before) resume-ranges)))
+      resume-ranges)))
 
 (defun elisp-tred-guide--destroy-all ()
   "Destroy all overlays related to Elisp-Tred-Guide in the current
@@ -248,203 +462,86 @@ buffer."
 
 ;;; Live update algorithm
 ;;
-;; When the user edits the buffer, instantly update the guides to
-;; reflect the new buffer contents.
+;; When the user edits the buffer, we need to quickly update the
+;; indentation/guide overlays to match the new buffer contents.
 ;;
 ;; Key points for understanding the live update algorithm:
 ;;
-;; (1) The update algorithm is line-based, because there is a
-;; one-to-one relationship between guide overlays and logical lines in
-;; the buffer.
+;; (1) The update algorithm is line-based, because there is always one
+;; indentation overlay per logical line, and one guide overlay per
+;; logical line.
 ;;
-;; (2) We keep track of which lines are "dirty" (i.e. which guides
-;; need to be updated) in `elisp-tred-guide--dirty-line-ranges'.
+;; (2) We use an `after-change-functions' hook to remember the regions
+;; where the user has edited the buffer, and then update the
+;; lines in those regions using an idle timer.
 ;;
-;; (3) Whenever the user makes an edit to the buffer, we mark *every
-;; line* in the buffer as dirty. This sounds ridiculous, but it is
-;; actually reasonably efficient if we update the dirty lines
-;; incrementally over time (see point 4).
-;;
-;; (4) We use Emacs' built-in `pre-redisplay-functions' hook to
-;; incrementally update the dirty lines. This hook gets called
-;; immediately before Emacs' re-renders the text in the visible
-;; portion of the current window, at which time we determine which
-;; dirty lines are visible and update them.
+;; (3) We surround the update work with a `while-no-input' macro, so
+;; that Emacs does not become unresponsive to user input while we are
+;; updating the overlays. This is important because certain types of
+;; buffer edits (e.g. inserting a single unbalanced paren) can affect
+;; the overlays for a large number of lines (every line in the file,
+;; the worse case).
+
+(defvar-local elisp-tred-guide--change-list nil
+  "A list of regions where text has changed.
+  Each element in the list is a cons cell of the form (BEG . END).")
 
 (defvar-local elisp-tred-guide--update-timer nil
   "Idle timer that updates the guides, when the user edits the buffer.")
 
+(defun elisp-tred-guide--process-updates-while-no-input (buffer)
+  "Update the indentation/guide overlays in response to buffer edits.
+
+To keep Emacs responsive, this function halts work when
+any user input occurs (e.g. a key press)."
+  (with-current-buffer buffer
+    (catch 'done
+      (while-let ((change-region (pop elisp-tred-guide--change-list)))
+        ;; When
+        ;; `elisp-tred-guide--update-or-create-overlays-for-change-region'
+        ;; returns a non-nil value for `resume-ranges', it means that
+        ;; line updates were interrupted by user input.
+        (when-let ((resume-ranges (elisp-tred-guide--update-or-create-overlays-for-change-region change-region)))
+          (dolist (resume-range resume-ranges)
+            (push resume-range elisp-tred-guide--change-list))
+          ;; Return nil to indicate that we were interrupted.
+          (throw 'done nil)))
+      ;; Return t to indicate that we processed all pending
+      ;; buffer changes.
+      t)))
+
 (defun elisp-tred-guide--update-timer-rearm ()
-  "Start idle timer that updates guides when user edits buffer."
+  "Reset idle timer for updating indentation and guide overlays."
   (elisp-tred-guide--update-timer-teardown)
   (setq elisp-tred-guide--update-timer
         (run-with-idle-timer 0.05 ;; seconds after Emacs becomes idle
                              t ;; repeat
-                             #'elisp-tred-guide--update-guides-if-buffer-changed
+                             #'elisp-tred-guide--process-updates-while-no-input
                              (current-buffer))))
 
 (defun elisp-tred-guide--update-timer-teardown ()
-  "Stop idle timer that updates guides when user edits buffer."
+  "Stop idle timer for updating indentation and guide overlays."
   (when (timerp elisp-tred-guide--update-timer)
     (cancel-timer elisp-tred-guide--update-timer)
     (setq elisp-tred-guide--update-timer nil)))
 
-(defvar-local elisp-tred-guide--dirty-line-ranges nil
-  "The line ranges where the guides are out-of-date due the user
-making edits in the buffer.")
-
-(defun elisp-tred-guide--mark-all-buffer-lines-dirty ()
-  "Mark all lines in the buffer as 'dirty', meaning that the guides on
-those lines need to be updated to correctly reflect the structure of
-the lisp code in the buffer."
-  (setq elisp-tred-guide--dirty-line-ranges
-        (list (cons
-               (line-number-at-pos (point-min))
-               (line-number-at-pos (point-max))))))
-
-(defvar-local elisp-tred-guide--buffer-chars-modified-tick nil
-  "The last `buffer-chars-modified-tick' that we've processed. This
-value is used to work around the bug/quirk that Emacs calls its
-redisplay hooks an unpredictable number of times for the same
-redisplay event.")
-
-(defun elisp-tred-guide--create-guides-in-line-range (range)
-  "Create guides for the line numbers contained in RANGE."
-  (let ((line-beg (car range))
-        (line-end (cdr range)))
-    (save-excursion
-	  (goto-line line-beg)
-      (while (and (<= (line-number-at-pos) line-end)
-                  (not (eobp)))
-        (elisp-tred-guide--hide-indentation-for-current-line)
-        (elisp-tred-guide--create-for-current-line)
-        (forward-line)))))
-
-(defun elisp-tred-guide--destroy-guides-in-line-range (range)
-  "Destroy guides for the line numbers contained in RANGE."
-  (let* ((line-beg (car range))
-         (line-end (cdr range))
-         (beg (save-excursion
-                (goto-line line-beg)
-                (line-beginning-position)))
-         (end (save-excursion
-                (goto-line line-end)
-                ;; `1+' because guide overlays include the newline at
-                ;; the end of the line, if present. (This gives us a
-                ;; character to attach the guide overlays to on empty
-                ;; lines.)
-                (min (1+ (line-end-position))
-                     (point-max)))))
-    (remove-overlays beg end 'category 'elisp-tred-guide)
-    (remove-overlays beg end 'category 'elisp-tred-indentation)))
-
-(defun elisp-tred-guide--line-ranges-subtract (range1 range2)
-  "Subtract line range RANGE2 from line range RANGE1, and return the
-result as a list of line ranges.
-
-Each line range in the returned list is a cons cell, where the CAR is
-the starting line number and the CDR is the ending line number
-(inclusive).
-
-Note that subtracting RANGE2 from RANGE1 may result 0, 1, or 2 line
-ranges, depending on how RANGE1 and RANGE2 overlap.
-
-Example: If RANGE1 is '(1 . 5) and RANGE2 is '(3 . 4), then the result
-is a list of two ranges: '((1 . 2) (5 . 5))."
-  (let* ((beg1 (car range1))
-         (beg2 (car range2))
-         (end1 (cdr range1))
-         (end2 (cdr range2))
-         result-ranges)
-    ;; If there is no overlap between `range1' and `range2', return
-    ;; `range1' unaltered.
-    (if (or (> beg1 end2) (> beg2 end1))
-        (list range1)
-      ;; Otherwise, compute subtraction which can result in 0-2
-      ;; ranges. Result will be 0 ranges (i.e. nil) if `range2'
-      ;; completely covers `range1'.
-      (when (> end1 end2)
-        (push (cons (1+ end2) end1) result-ranges))
-      (when (< beg1 beg2)
-        (push (cons beg1 (1- beg2)) result-ranges))
-      result-ranges)))
-
-(defun elisp-tred-guide--line-ranges-intersect (range1 range2)
-  "Return the line range that is the intersection of line ranges
-RANGE1 and RANGE2. The result is returned as a cons cell, where the
-CAR is the starting line number and the CDR is the end line number
-(inclusive).
-
-Example: If RANGE1 is '(1 . 5) and RANGE2 is '(4 . 9), then the result
-is '(4 . 5)."
-  (let* ((beg1 (car range1))
-         (beg2 (car range2))
-         (end1 (cdr range1))
-         (end2 (cdr range2))
-         (result-beg (max beg1 beg2))
-         (result-end (min end1 end2)))
-    ;; If `result-beg' > `result-end', it means that `range1' and
-    ;; `range2' do not intersect.
-    (when (<= result-beg result-end)
-      (cons result-beg result-end))))
-
-(defun elisp-tred-guide--visible-line-range ()
-  "Return the range of line numbers that are visible in the current
-window as a cons cell, where the CAR is the starting line number and
-the CDR is the ending line number (inclusive)."
-  (let ((line-beg (save-excursion
-                    (goto-char (window-start))
-                    (line-number-at-pos)))
-        (line-end (save-excursion
-                    (goto-char (window-end))
-                    (line-number-at-pos))))
-    (cons line-beg line-end)))
-
-(defun elisp-tred-guide--mark-line-ranges-as-clean (line-ranges)
-  "Remove the 'dirty' status from LINE-RANGES.
-
-LINE-RANGES is a list of cons cells where the CAR is the starting line
-number and the CDR is the ending line number (inclusive)."
-  (dolist (line-range line-ranges)
-    (setq elisp-tred-guide--dirty-line-ranges
-          (mapcan (lambda (dirty-line-range)
-                    (elisp-tred-guide--line-ranges-subtract dirty-line-range line-range))
-                  elisp-tred-guide--dirty-line-ranges))))
-
-(defun elisp-tred-guide--update-dirty-lines-overlapping-range (line-range)
-  "Update the guides on 'dirty' lines that overlap LINE-RANGE."
-  (dolist (dirty-line-range elisp-tred-guide--dirty-line-ranges)
-    (when-let ((intersection-range
-                (elisp-tred-guide--line-ranges-intersect
-                 dirty-line-range
-                 line-range)))
-      (elisp-tred-guide--destroy-guides-in-line-range intersection-range)
-      (elisp-tred-guide--create-guides-in-line-range intersection-range)
-      (elisp-tred-guide--mark-line-ranges-as-clean (list intersection-range)))))
-
-(defun elisp-tred-guide--update-guides-if-buffer-changed (buffer)
-  "Update the guides, in response to user edits in the buffer."
-  (with-current-buffer buffer
-    (unless (eq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick))
-      ;; If the buffer contents have changed in any way, naively
-      ;; mark all lines in the buffer as dirty.
-      (elisp-tred-guide--mark-all-buffer-lines-dirty)
-      (setq elisp-tred-guide--buffer-chars-modified-tick (buffer-chars-modified-tick)))
-    (while-no-input
-      (let* ((update-radius 5)
-             (line-number-center (line-number-at-pos))
-             (line-number-min (line-number-at-pos (point-min)))
-             (line-number-max (line-number-at-pos (point-max)))
-             (update-range (cons line-number-center line-number-center)))
-        (while (or (> (car update-range) line-number-min)
-                   (< (cdr update-range) line-number-max))
-          (setcar update-range
-                  (max (- (car update-range) update-radius)
-                       line-number-min))
-          (setcdr update-range
-                  (min (+ (cdr update-range) update-radius)
-                       line-number-max))
-          (elisp-tred-guide--update-dirty-lines-overlapping-range update-range))))))
+(defun elisp-tred-guide--record-buffer-change (beg end _length)
+  "Record that a buffer change occurred between BEG and END.
+This function is invoked by `after-change-functions'."
+  (push (cons (set-marker (make-marker) beg) (set-marker (make-marker) end))
+        elisp-tred-guide--change-list)
+  ;; For reasons I don't fully understand, I need to re-arm the idle
+;; timer here, to ensure that it fires reliably after each buffer
+;; edit.  Otherwise, the timer sometimes fails to fire after editing
+;; the buffer, and guides don't get updated until the user presses an
+;; additional key.
+  ;; 
+  ;; I have seen other modes implement the same workaround. For example,
+;; see discussion at [1], or the source code for
+;; `aggressive-indent-mode'.
+  ;;
+  ;; [1]: https://emacs.stackexchange.com/a/71615
+  (elisp-tred-guide--update-timer-rearm))
 
 ;;; Integration with indentation functions
 ;;
@@ -552,25 +649,9 @@ mode."
   (elisp-tred-guide--indent-advice-init)
   (elisp-tred-guide--indent-command-hooks-init)
   (elisp-tred-guide--update-timer-rearm)
-  ;; Note: If one wants an idle timer to fire reliably after every buffer
-  ;; edit, the accepted wisdom seems is that you should re-arm the
-  ;; timer in an `after-change-functions' hook. For concrete examples,
-  ;; see the code example at [1] and/or the source code for
-  ;; `aggressive-indent-mode'.
-  ;;
-  ;; I'm not sure why using `after-change-functions' is necessary,
-  ;; versus the more obvious/straightforward approach of just creating a
-  ;; repeating idle timer once, when the mode is first enabled. In
-  ;; practice, I can confirm that the simpler approach does not work
-  ;; reliably -- sometimes the idle timer fails to fire after buffer
-  ;; edits, and the user has to press an additional key before the
-  ;; timer fires. It could be a subtle timing issue, or it could be that
-  ;; the REPEAT parameter of `run-with-idle-timer' is bugged.
-  ;;
-  ;; [1]: https://emacs.stackexchange.com/a/71615
-  (add-hook 'after-change-functions #'elisp-tred-guide--update-timer-rearm nil t)
-  (add-hook 'after-revert-hook #'elisp-tred-guide--mark-all-buffer-lines-dirty nil t)
-  (add-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown nil t))
+  (add-hook 'after-change-functions #'elisp-tred-guide--record-buffer-change nil t)
+  (add-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown nil t)
+  (setq elisp-tred-guide--change-list (list (cons (point-min-marker) (point-max-marker)))))
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
@@ -578,12 +659,8 @@ mode."
   (elisp-tred-guide--indent-command-hooks-teardown)
   (elisp-tred-guide--update-timer-teardown)
   (elisp-tred-guide--destroy-all)
-  (remove-hook 'after-change-functions #'elisp-tred-guide--update-timer-rearm t)
-  (remove-hook 'after-revert-hook #'elisp-tred-guide--mark-all-buffer-lines-dirty t)
-  (remove-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown t)
-  ;; Note: We need to reset this variable to nil, to ensure that all
-  ;; guides are re-created if user turns the mode off and on again.
-  (setq elisp-tred-guide--buffer-chars-modified-tick nil))
+  (remove-hook 'after-change-functions #'elisp-tred-guide--record-buffer-change t)
+  (remove-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown t))
 
 (define-minor-mode elisp-tred-guide-mode
   "Display tree guides for elisp code."
