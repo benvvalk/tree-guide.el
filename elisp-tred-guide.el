@@ -576,6 +576,7 @@ mode."
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
   (elisp-tred-guide--indent-advice-teardown)
   (elisp-tred-guide--indent-command-hooks-teardown)
+  (elisp-tred-guide--update-timer-teardown)
   (elisp-tred-guide--destroy-all)
   (remove-hook 'after-change-functions #'elisp-tred-guide--update-timer-rearm t)
   (remove-hook 'after-revert-hook #'elisp-tred-guide--mark-all-buffer-lines-dirty t)
