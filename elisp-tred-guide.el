@@ -454,7 +454,7 @@ user input."
           (push (cons resume-before resume-before) resume-ranges)))
       resume-ranges)))
 
-(defun elisp-tred-guide--destroy-all ()
+(defun elisp-tred-guide--delete-all-overlays ()
   "Destroy all overlays related to Elisp-Tred-Guide in the current
 buffer."
   (remove-overlays nil nil 'category 'elisp-tred-guide)
@@ -658,7 +658,7 @@ mode."
   (elisp-tred-guide--indent-advice-teardown)
   (elisp-tred-guide--indent-command-hooks-teardown)
   (elisp-tred-guide--update-timer-teardown)
-  (elisp-tred-guide--destroy-all)
+  (elisp-tred-guide--delete-all-overlays)
   (remove-hook 'after-change-functions #'elisp-tred-guide--record-buffer-change t)
   (remove-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown t))
 
