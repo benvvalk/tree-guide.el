@@ -263,7 +263,7 @@ extraneous overlays that needed to be removed."
                (overlay (make-overlay line-beg overlay-end nil t nil)))
           (overlay-put overlay 'category 'elisp-tred-indentation)
           (overlay-put overlay 'evaporate t)
-          (overlay-put overlay 'invisible t))))))
+          (overlay-put overlay 'invisible 'elisp-tred-guide))))))
 
 (defun elisp-tred-guide--update-or-create-guide-overlay-for-current-line ()
   "Create or update the guide overlay for the current line.
@@ -609,10 +609,10 @@ explanation."
            (lambda (regexp)
              (string-match regexp command-name nil t))
            elisp-tred-guide-regexps-for-commands-that-require-visible-indentation)
-      (setq-local buffer-invisibility-spec nil))))
+      (remove-from-invisibility-spec 'elisp-tred-guide))))
 
 (defun elisp-tred-guide--indent-post-command-hook ()
-  (setq-local buffer-invisibility-spec t)
+  (add-to-invisibility-spec 'elisp-tred-guide)
   ;; If point is inside invisible text, move point to the first visible
   ;; character on the line.
   ;;
@@ -646,6 +646,7 @@ explanation."
 (defun elisp-tred-guide--mode-init ()
   "Performs necessary initialization when enabling Elisp-Tred-Guide
 mode."
+  (add-to-invisibility-spec 'elisp-tred-guide)
   (elisp-tred-guide--indent-advice-init)
   (elisp-tred-guide--indent-command-hooks-init)
   (elisp-tred-guide--update-timer-rearm)
@@ -655,6 +656,7 @@ mode."
 
 (defun elisp-tred-guide--mode-teardown ()
   "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
+  (remove-from-invisibility-spec 'elisp-tred-guide)
   (elisp-tred-guide--indent-advice-teardown)
   (elisp-tred-guide--indent-command-hooks-teardown)
   (elisp-tred-guide--update-timer-teardown)
