@@ -6,22 +6,22 @@
 ;;
 ;; For each logical line in the buffer, create a guide overlay.
 
-(defcustom elisp-tred-guide-handle-width 1
+(defcustom tree-guide-handle-width 1
   "Minimum width of guide handle, in characters.")
 
-(defcustom elisp-tred-guide-min-depth 1
+(defcustom tree-guide-min-depth 1
   "The minimum depth for which to render guides.
 
 Top-level sexps are at depth 0, children of top-level sexps are at
 depth 1, and so on.")
 
-(defvar elisp-tred-guide--guide-char-with-handle "├")
-(defvar elisp-tred-guide--guide-char-with-handle-last "╰")
-(defvar elisp-tred-guide--guide-char-without-handle "│")
-(defvar elisp-tred-guide--guide-char-handle "─")
-(defvar elisp-tred-guide--guide-char-space " ")
+(defvar tree-guide--guide-char-with-handle "├")
+(defvar tree-guide--guide-char-with-handle-last "╰")
+(defvar tree-guide--guide-char-without-handle "│")
+(defvar tree-guide--guide-char-handle "─")
+(defvar tree-guide--guide-char-space " ")
 
-(defun elisp-tred-guide--parent-sexp-end-position ()
+(defun tree-guide--parent-sexp-end-position ()
   "Return the end position of the parent sexp containing point.
 
 If point is not contained within a sexp, i.e. it is located
@@ -59,7 +59,7 @@ position (i.e. the value returned by `point-max')."
           (scan-sexps parent-sexp-beg 1)
         (scan-error (point-max))))))
 
-(defun elisp-tred-guide--last-line-at-current-depth-p ()
+(defun tree-guide--last-line-at-current-depth-p ()
   "Return non-nil if there is no next sibling sexp, string, comment, or
 blank line that appears on a subsequent line.
 
@@ -73,7 +73,7 @@ siblings."
   (catch 'done
     (save-excursion
       (let* ((parent-sexp-beg (nth 1 (syntax-ppss)))
-             (parent-sexp-end (elisp-tred-guide--parent-sexp-end-position))
+             (parent-sexp-end (tree-guide--parent-sexp-end-position))
              (parent-sexp-end-line-number (line-number-at-pos parent-sexp-end)))
         (while (< (line-number-at-pos) parent-sexp-end-line-number)
           (forward-line)
@@ -85,7 +85,7 @@ siblings."
         ;; sexp, before encountering another sibling line.
         t))))
 
-(defun elisp-tred-guide--compute-guide-offset-and-type (sexp-beg parent-sexp-beg)
+(defun tree-guide--compute-guide-offset-and-type (sexp-beg parent-sexp-beg)
   "Calculate the guide offset and type for the sexp beginning at buffer
 position SEXP-BEG. PARENT-SEXP-BEG is the start position of the parent
 sexp that contains SEXP-BEG, or nil if SEXP-BEG is a top-level sexp.
@@ -103,7 +103,7 @@ sexp."
                                           ;; fast jump to beginning of line
                                           (forward-line 0)
                                           (<= (point) parent-sexp-beg))))
-           (guide-type-last-p (elisp-tred-guide--last-line-at-current-depth-p)))
+           (guide-type-last-p (tree-guide--last-line-at-current-depth-p)))
       ;; If: parent sexp starts on same line, guide offset is offset from
       ;; start of parent sexp, minus 1 to make room for parent guide
       ;; char (i.e. `|' or ` ').
@@ -118,10 +118,10 @@ sexp."
                                   (goto-char sexp-beg)
                                   (current-column))))
                 (+ (- column-pos indentation)
-                   elisp-tred-guide-handle-width)))
+                   tree-guide-handle-width)))
             guide-type-last-p))))
 
-(defun elisp-tred-guide--compute-guide-offsets-and-types (&optional guide-offsets-and-types)
+(defun tree-guide--compute-guide-offsets-and-types (&optional guide-offsets-and-types)
   "Compute the column positions for the guides on the current line.
 
 The GUIDE-OFFSETS-AND-TYPES argument is used internally for passing intermediate
@@ -154,7 +154,7 @@ is the last child of its parent."
     (let* (buffer-invisibility-spec
            (parser-state (syntax-ppss))
            (parent-sexp-beg (nth 1 parser-state))
-           (guide-offset (elisp-tred-guide--compute-guide-offset-and-type
+           (guide-offset (tree-guide--compute-guide-offset-and-type
                           (point)
                           parent-sexp-beg)))
       (push guide-offset guide-offsets-and-types)
@@ -163,15 +163,15 @@ is the last child of its parent."
           guide-offsets-and-types
         ;; else: move point to beginning of parent sexp and recurse
         (goto-char parent-sexp-beg)
-        (elisp-tred-guide--compute-guide-offsets-and-types guide-offsets-and-types)))))
+        (tree-guide--compute-guide-offsets-and-types guide-offsets-and-types)))))
 
-(defun elisp-tred-guide--make-guide-string (guide-offsets-and-types)
+(defun tree-guide--make-guide-string (guide-offsets-and-types)
   "Make a guide string from GUIDE-OFFSETS-AND-TYPES.
 
 For example, if GUIDE-OFFSETS-AND-TYPES is ((1) (3) (6 . t)), the return value
 will be '| | ╰'.
 
-See the docstring for `elisp-tred-guide--compute-guide-offsets-and-types' for
+See the docstring for `tree-guide--compute-guide-offsets-and-types' for
 further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
   (let (guide-string-parts
         (num-guides (length guide-offsets-and-types)))
@@ -181,27 +181,27 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
              (guide-type-last-p (cdr (nth i guide-offsets-and-types)))
              (guide-char (if rightmost-guide-p
                               (if guide-type-last-p
-                                  elisp-tred-guide--guide-char-with-handle-last
-                                elisp-tred-guide--guide-char-with-handle)
+                                  tree-guide--guide-char-with-handle-last
+                                tree-guide--guide-char-with-handle)
                             (if guide-type-last-p
-                                elisp-tred-guide--guide-char-space
-                              elisp-tred-guide--guide-char-without-handle)))
+                                tree-guide--guide-char-space
+                              tree-guide--guide-char-without-handle)))
              (num-padding-chars (max
                                  guide-offset
                                  (if rightmost-guide-p
-                                     elisp-tred-guide-handle-width
+                                     tree-guide-handle-width
                                    0)))
              (padding-char (if rightmost-guide-p
-                               elisp-tred-guide--guide-char-handle
-                             elisp-tred-guide--guide-char-space)))
-        (when (>= i elisp-tred-guide-min-depth)
+                               tree-guide--guide-char-handle
+                             tree-guide--guide-char-space)))
+        (when (>= i tree-guide-min-depth)
           (push (concat
                 guide-char
                 (string-join (make-list num-padding-chars padding-char)))
                guide-string-parts))))
     (string-join (nreverse guide-string-parts))))
 
-(defun elisp-tred-guide--update-or-create-indentation-overlay-for-current-line ()
+(defun tree-guide--update-or-create-indentation-overlay-for-current-line ()
   "Create or update the indentation overlay for the current line.
 
 The purpose of the indentation overlays is to hide the leading
@@ -263,9 +263,9 @@ extraneous overlays that needed to be removed."
                (overlay (make-overlay line-beg overlay-end nil t nil)))
           (overlay-put overlay 'category 'elisp-tred-indentation)
           (overlay-put overlay 'evaporate t)
-          (overlay-put overlay 'invisible 'elisp-tred-guide))))))
+          (overlay-put overlay 'invisible 'tree-guide))))))
 
-(defun elisp-tred-guide--update-or-create-guide-overlay-for-current-line ()
+(defun tree-guide--update-or-create-guide-overlay-for-current-line ()
   "Create or update the guide overlay for the current line.
 
 The guide overlays display virtual tree guide characters at the
@@ -288,7 +288,7 @@ there were no extraneous overlays that needed to be removed."
   (save-excursion
     ;; Notes:
     ;; 
-    ;; (1) `elisp-tred-guide--compute-guide-offsets-and-types' requires
+    ;; (1) `tree-guide--compute-guide-offsets-and-types' requires
     ;; point to be located immediately before the first non-whitespace
     ;; character on the current line.
     ;;
@@ -296,20 +296,20 @@ there were no extraneous overlays that needed to be removed."
     ;; because `current-indentation' ignores invisible whitespace chars.
     (let (buffer-invisibility-spec)
       (move-to-column (current-indentation)))
-    (let* ((guide-offsets-and-types (elisp-tred-guide--compute-guide-offsets-and-types))
-           (guide-string (elisp-tred-guide--make-guide-string guide-offsets-and-types))
+    (let* ((guide-offsets-and-types (tree-guide--compute-guide-offsets-and-types))
+           (guide-string (tree-guide--make-guide-string guide-offsets-and-types))
            (line-end (save-excursion (forward-line 1) (point)))
            (line-beg (save-excursion (forward-line 0) (point)))
            (existing-overlays (seq-filter
                                (lambda (overlay)
                                  (eq (overlay-get overlay 'category)
-                                     'elisp-tred-guide))
+                                     'tree-guide))
                                (overlays-in line-beg line-end))))
       ;; If: number of guides on the current line is <=
-      ;; `elisp-tred-guide-min-depth', there are no guides that need to be
+      ;; `tree-guide-min-depth', there are no guides that need to be
       ;; displayed at the beginning of this line. We need to delete any
       ;; existing overlays, and return non-nil if any overlays were deleted.
-      (if (<= (length guide-offsets-and-types) elisp-tred-guide-min-depth)
+      (if (<= (length guide-offsets-and-types) tree-guide-min-depth)
           (when existing-overlays
             (mapc #'delete-overlay existing-overlays))
         ;; Else: One or more guides need to be displayed at the
@@ -322,20 +322,20 @@ there were no extraneous overlays that needed to be removed."
                      (string-equal (overlay-get (car existing-overlays) 'line-prefix) guide-string))
           (mapc #'delete-overlay existing-overlays)
           (let* ((overlay (make-overlay line-beg line-end nil nil t)))
-            (overlay-put overlay 'category 'elisp-tred-guide)
+            (overlay-put overlay 'category 'tree-guide)
             (overlay-put overlay 'evaporate t)
             (overlay-put overlay 'line-prefix guide-string)))))))
 
-(defun elisp-tred-guide--update-or-create-overlays-for-current-line ()
+(defun tree-guide--update-or-create-overlays-for-current-line ()
   "Create or update the indentation and guide overlays for the current line."
   (let ((indentation-overlay-updated-p
-         (elisp-tred-guide--update-or-create-indentation-overlay-for-current-line))
+         (tree-guide--update-or-create-indentation-overlay-for-current-line))
         (guide-overlay-updated-p
-         (elisp-tred-guide--update-or-create-guide-overlay-for-current-line)))
+         (tree-guide--update-or-create-guide-overlay-for-current-line)))
     (or indentation-overlay-updated-p
         guide-overlay-updated-p)))
 
-(defun elisp-tred-guide--update-or-create-overlays-for-change-region (change-region)
+(defun tree-guide--update-or-create-overlays-for-change-region (change-region)
   "Update indentation and guide overlays in response to a buffer edit.
 
 CHANGE-REGION is a cons cell of the form (BEG . END), which describes
@@ -394,7 +394,7 @@ user input."
         ;; Unconditionally update all lines that overlap the change
         ;; region.
 		(while (and (not (eobp)) (<= (point) end))
-          (elisp-tred-guide--update-or-create-overlays-for-current-line)
+          (tree-guide--update-or-create-overlays-for-current-line)
           (forward-line)
           ;; Save progress after updating each line, in case we are
           ;; interrupted by user input.
@@ -409,7 +409,7 @@ user input."
         ;; end of the buffer.
         (when (marker-position resume-after)
           (while (and (not (eobp))
-                      (elisp-tred-guide--update-or-create-overlays-for-current-line))
+                      (tree-guide--update-or-create-overlays-for-current-line))
            (forward-line 1)
            ;; Save progress after updating each line, in case we are
            ;; interrupted by user input.
@@ -422,7 +422,7 @@ user input."
         (when (marker-position resume-before)
 		  (goto-char resume-before)
           (while (and (not (bobp))
-                      (elisp-tred-guide--update-or-create-overlays-for-current-line))
+                      (tree-guide--update-or-create-overlays-for-current-line))
             (forward-line -1)
             ;; Save progress after updating each line, in case we are
             ;; interrupted by user input.
@@ -454,10 +454,10 @@ user input."
           (push (cons resume-before resume-before) resume-ranges)))
       resume-ranges)))
 
-(defun elisp-tred-guide--delete-all-overlays ()
-  "Destroy all overlays related to Elisp-Tred-Guide in the current
+(defun tree-guide--delete-all-overlays ()
+  "Destroy all overlays related to tree-Guide in the current
 buffer."
-  (remove-overlays nil nil 'category 'elisp-tred-guide)
+  (remove-overlays nil nil 'category 'tree-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
 
 ;;; Live update algorithm
@@ -482,54 +482,54 @@ buffer."
 ;; the overlays for a large number of lines (every line in the file,
 ;; the worse case).
 
-(defvar-local elisp-tred-guide--change-list nil
+(defvar-local tree-guide--change-list nil
   "A list of regions where text has changed.
   Each element in the list is a cons cell of the form (BEG . END).")
 
-(defvar-local elisp-tred-guide--update-timer nil
+(defvar-local tree-guide--update-timer nil
   "Idle timer that updates the guides, when the user edits the buffer.")
 
-(defun elisp-tred-guide--process-updates-while-no-input (buffer)
+(defun tree-guide--process-updates-while-no-input (buffer)
   "Update the indentation/guide overlays in response to buffer edits.
 
 To keep Emacs responsive, this function halts work when
 any user input occurs (e.g. a key press)."
   (with-current-buffer buffer
     (catch 'done
-      (while-let ((change-region (pop elisp-tred-guide--change-list)))
+      (while-let ((change-region (pop tree-guide--change-list)))
         ;; When
-        ;; `elisp-tred-guide--update-or-create-overlays-for-change-region'
+        ;; `tree-guide--update-or-create-overlays-for-change-region'
         ;; returns a non-nil value for `resume-ranges', it means that
         ;; line updates were interrupted by user input.
-        (when-let ((resume-ranges (elisp-tred-guide--update-or-create-overlays-for-change-region change-region)))
+        (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
           (dolist (resume-range resume-ranges)
-            (push resume-range elisp-tred-guide--change-list))
+            (push resume-range tree-guide--change-list))
           ;; Return nil to indicate that we were interrupted.
           (throw 'done nil)))
       ;; Return t to indicate that we processed all pending
       ;; buffer changes.
       t)))
 
-(defun elisp-tred-guide--update-timer-rearm ()
+(defun tree-guide--update-timer-rearm ()
   "Reset idle timer for updating indentation and guide overlays."
-  (elisp-tred-guide--update-timer-teardown)
-  (setq elisp-tred-guide--update-timer
+  (tree-guide--update-timer-teardown)
+  (setq tree-guide--update-timer
         (run-with-idle-timer 0.05 ;; seconds after Emacs becomes idle
                              t ;; repeat
-                             #'elisp-tred-guide--process-updates-while-no-input
+                             #'tree-guide--process-updates-while-no-input
                              (current-buffer))))
 
-(defun elisp-tred-guide--update-timer-teardown ()
+(defun tree-guide--update-timer-teardown ()
   "Stop idle timer for updating indentation and guide overlays."
-  (when (timerp elisp-tred-guide--update-timer)
-    (cancel-timer elisp-tred-guide--update-timer)
-    (setq elisp-tred-guide--update-timer nil)))
+  (when (timerp tree-guide--update-timer)
+    (cancel-timer tree-guide--update-timer)
+    (setq tree-guide--update-timer nil)))
 
-(defun elisp-tred-guide--record-buffer-change (beg end _length)
+(defun tree-guide--record-buffer-change (beg end _length)
   "Record that a buffer change occurred between BEG and END.
 This function is invoked by `after-change-functions'."
   (push (cons (set-marker (make-marker) beg) (set-marker (make-marker) end))
-        elisp-tred-guide--change-list)
+        tree-guide--change-list)
   ;; For reasons I don't fully understand, I need to re-arm the idle
 ;; timer here, to ensure that it fires reliably after each buffer
 ;; edit.  Otherwise, the timer sometimes fails to fire after editing
@@ -541,7 +541,7 @@ This function is invoked by `after-change-functions'."
 ;; `aggressive-indent-mode'.
   ;;
   ;; [1]: https://emacs.stackexchange.com/a/71615
-  (elisp-tred-guide--update-timer-rearm))
+  (tree-guide--update-timer-rearm))
 
 ;;; Integration with indentation functions
 ;;
@@ -556,7 +556,7 @@ This function is invoked by `after-change-functions'."
 ;; unhide all invisible text by setting `buffer-invisibility-spec' to
 ;; nil.
 
-(defcustom elisp-tred-guide-regexps-for-commands-that-require-visible-indentation
+(defcustom tree-guide-regexps-for-commands-that-require-visible-indentation
   '("lispy")
   "A list of regexps for commands that require indentation whitespace
 to be visible, in order to function correctly.
@@ -570,7 +570,7 @@ indentation functions (`indent-line-function' and
 Indentation whitespace is temporarily unhidden for commands that match
 this regexp list, by setting `buffer-invisibility-spec' to nil.")
 
-(defun elisp-tred-guide--indent-advice (orig-fn &rest args)
+(defun tree-guide--indent-advice (orig-fn &rest args)
   "Advice for Emacs' built-in indent functions
 (e.g. `indent-line-function', `indent-region-function'), that temporarily
 unhides indentation whitespace on all lines.
@@ -585,34 +585,34 @@ invisible text, by setting `buffer-invisibility-spec' to nil."
   (let (buffer-invisibility-spec)
     (apply orig-fn args)))
 
-(defun elisp-tred-guide--indent-advice-init ()
+(defun tree-guide--indent-advice-init ()
   "Add advice to Emacs' built-in line/region indentation functions, so
 that they work correctly in Elisp-Tred mode.
 
-See the docstring for `elisp-tred-guide--indent-advice' for further
+See the docstring for `tree-guide--indent-advice' for further
 explanation."
-  (advice-add indent-line-function :around #'elisp-tred-guide--indent-advice)
-  (advice-add indent-region-function :around #'elisp-tred-guide--indent-advice))
+  (advice-add indent-line-function :around #'tree-guide--indent-advice)
+  (advice-add indent-region-function :around #'tree-guide--indent-advice))
 
-(defun elisp-tred-guide--indent-advice-teardown ()
+(defun tree-guide--indent-advice-teardown ()
   "Remove advice from Emacs' built-in line/region indentation
 functions.
 
-See the docstring for `elisp-tred-guide--indent-advice' for further
+See the docstring for `tree-guide--indent-advice' for further
 explanation."
-  (advice-remove indent-line-function #'elisp-tred-guide--indent-advice)
-  (advice-remove indent-region-function #'elisp-tred-guide--indent-advice))
+  (advice-remove indent-line-function #'tree-guide--indent-advice)
+  (advice-remove indent-region-function #'tree-guide--indent-advice))
 
-(defun elisp-tred-guide--indent-pre-command-hook ()
+(defun tree-guide--indent-pre-command-hook ()
   (let ((command-name (symbol-name this-command)))
     (when (seq-find
            (lambda (regexp)
              (string-match regexp command-name nil t))
-           elisp-tred-guide-regexps-for-commands-that-require-visible-indentation)
-      (remove-from-invisibility-spec 'elisp-tred-guide))))
+           tree-guide-regexps-for-commands-that-require-visible-indentation)
+      (remove-from-invisibility-spec 'tree-guide))))
 
-(defun elisp-tred-guide--indent-post-command-hook ()
-  (add-to-invisibility-spec 'elisp-tred-guide)
+(defun tree-guide--indent-post-command-hook ()
+  (add-to-invisibility-spec 'tree-guide)
   ;; If point is inside invisible text, move point to the first visible
   ;; character on the line.
   ;;
@@ -633,42 +633,42 @@ explanation."
                 (invisible-p (point)))
       (goto-char (next-char-property-change (point) line-end-pos)))))
 
-(defun elisp-tred-guide--indent-command-hooks-init ()
-  (add-hook 'pre-command-hook #'elisp-tred-guide--indent-pre-command-hook nil t)
-  (add-hook 'post-command-hook #'elisp-tred-guide--indent-post-command-hook nil t))
+(defun tree-guide--indent-command-hooks-init ()
+  (add-hook 'pre-command-hook #'tree-guide--indent-pre-command-hook nil t)
+  (add-hook 'post-command-hook #'tree-guide--indent-post-command-hook nil t))
 
-(defun elisp-tred-guide--indent-command-hooks-teardown ()
-  (remove-hook 'pre-command-hook #'elisp-tred-guide--indent-pre-command-hook t)
-  (remove-hook 'post-command-hook #'elisp-tred-guide--indent-post-command-hook t))
+(defun tree-guide--indent-command-hooks-teardown ()
+  (remove-hook 'pre-command-hook #'tree-guide--indent-pre-command-hook t)
+  (remove-hook 'post-command-hook #'tree-guide--indent-post-command-hook t))
 
 ;;; Minor mode definition
 
-(defun elisp-tred-guide--mode-init ()
-  "Performs necessary initialization when enabling Elisp-Tred-Guide
+(defun tree-guide--mode-init ()
+  "Performs necessary initialization when enabling tree-Guide
 mode."
-  (add-to-invisibility-spec 'elisp-tred-guide)
-  (elisp-tred-guide--indent-advice-init)
-  (elisp-tred-guide--indent-command-hooks-init)
-  (elisp-tred-guide--update-timer-rearm)
-  (add-hook 'after-change-functions #'elisp-tred-guide--record-buffer-change nil t)
-  (add-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown nil t)
-  (setq elisp-tred-guide--change-list (list (cons (point-min-marker) (point-max-marker)))))
+  (add-to-invisibility-spec 'tree-guide)
+  (tree-guide--indent-advice-init)
+  (tree-guide--indent-command-hooks-init)
+  (tree-guide--update-timer-rearm)
+  (add-hook 'after-change-functions #'tree-guide--record-buffer-change nil t)
+  (add-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown nil t)
+  (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker)))))
 
-(defun elisp-tred-guide--mode-teardown ()
-  "Perform necessary teardown when disabling Elisp-Tred-Guide mode."
-  (remove-from-invisibility-spec 'elisp-tred-guide)
-  (elisp-tred-guide--indent-advice-teardown)
-  (elisp-tred-guide--indent-command-hooks-teardown)
-  (elisp-tred-guide--update-timer-teardown)
-  (elisp-tred-guide--delete-all-overlays)
-  (remove-hook 'after-change-functions #'elisp-tred-guide--record-buffer-change t)
-  (remove-hook 'kill-buffer-hook #'elisp-tred-guide--update-timer-teardown t))
+(defun tree-guide--mode-teardown ()
+  "Perform necessary teardown when disabling tree-Guide mode."
+  (remove-from-invisibility-spec 'tree-guide)
+  (tree-guide--indent-advice-teardown)
+  (tree-guide--indent-command-hooks-teardown)
+  (tree-guide--update-timer-teardown)
+  (tree-guide--delete-all-overlays)
+  (remove-hook 'after-change-functions #'tree-guide--record-buffer-change t)
+  (remove-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown t))
 
-(define-minor-mode elisp-tred-guide-mode
+(define-minor-mode tree-guide-mode
   "Display tree guides for elisp code."
   :lighter nil
-  (if elisp-tred-guide-mode
-      (elisp-tred-guide--mode-init)
-    (elisp-tred-guide--mode-teardown)))
+  (if tree-guide-mode
+      (tree-guide--mode-init)
+    (tree-guide--mode-teardown)))
 
-(provide 'elisp-tred-guide)
+(provide 'tree-guide)
