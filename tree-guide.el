@@ -196,9 +196,9 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
                              tree-guide--guide-char-space)))
         (when (>= i tree-guide-min-depth)
           (push (concat
-                guide-char
-                (string-join (make-list num-padding-chars padding-char)))
-               guide-string-parts))))
+                 guide-char
+                 (string-join (make-list num-padding-chars padding-char)))
+                guide-string-parts))))
     (string-join (nreverse guide-string-parts))))
 
 (defun tree-guide--update-or-create-indentation-overlay-for-current-line ()
