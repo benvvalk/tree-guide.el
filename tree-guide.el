@@ -345,17 +345,17 @@ user input."
   (let* ((beg (car change-region))
          (end (cdr change-region))
          (resume-before-pos (save-excursion
-                                  (goto-char beg)
-                                  (when (= (forward-line -1) 0)
-                                    (point))))
+                              (goto-char beg)
+                              (when (= (forward-line -1) 0)
+                                (point))))
          (resume-before (set-marker (make-marker) resume-before-pos))
          (resume-beg (set-marker (make-marker) beg))
          (resume-end (set-marker (make-marker) end))
          (resume-after-pos (save-excursion
-                                  (goto-char end)
-                                  (forward-line 1)
-                                  (when (not (eobp))
-                                    (point))))
+                             (goto-char end)
+                             (forward-line 1)
+                             (when (not (eobp))
+                               (point))))
          (resume-after (set-marker (make-marker) resume-after-pos)))
     (save-excursion
       ;; We use `while-no-input' to interrupt the work when Emacs receives
