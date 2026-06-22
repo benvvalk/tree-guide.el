@@ -154,10 +154,10 @@ is the last child of its parent."
     (let* (buffer-invisibility-spec
            (parser-state (syntax-ppss))
            (parent-sexp-beg (nth 1 parser-state))
-           (guide-offset (tree-guide--compute-guide-offset-and-type
-                          (point)
-                          parent-sexp-beg)))
-      (push guide-offset guide-offsets-and-types)
+           (guide-offset-and-type (tree-guide--compute-guide-offset-and-type
+                                   (point)
+                                   parent-sexp-beg)))
+      (push guide-offset-and-type guide-offsets-and-types)
       ;; if: there is no parent sexp, finish and return the result
       (if (null parent-sexp-beg)
           guide-offsets-and-types
