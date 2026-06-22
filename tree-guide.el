@@ -385,7 +385,7 @@ user input."
          (resume-after (set-marker (make-marker) resume-after-pos)))
     (save-excursion
       ;; We use `while-no-input' to interrupt the work when Emacs receives
-;; user input (e.g. a key press).
+      ;; user input (e.g. a key press).
       (while-no-input
         ;; Go to beginning of first line overlapping the change
         ;; region.
