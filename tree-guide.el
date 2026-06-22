@@ -6,7 +6,7 @@
 ;;
 ;; For each logical line in the buffer, create a guide overlay.
 
-(defcustom tree-guide-handle-width 1
+(defcustom tree-guide-min-handle-width 1
   "Minimum width of guide handle, in characters.")
 
 (defcustom tree-guide-min-depth 1
@@ -85,60 +85,20 @@ siblings."
         ;; sexp, before encountering another sibling line.
         t))))
 
-(defun tree-guide--compute-guide-offset-and-type (sexp-beg parent-sexp-beg)
-  "Calculate the guide offset and type for the sexp beginning at buffer
-position SEXP-BEG. PARENT-SEXP-BEG is the start position of the parent
-sexp that contains SEXP-BEG, or nil if SEXP-BEG is a top-level sexp.
-
-The return value is a cons cell of the form (OFFSET
-. GUIDE-TYPE-LAST-P), where OFFSET is an integer specifying how many
-space characters to insert before the guide, and GUIDE-TYPE-LAST-P is
-a boolean indicating if SEXP-BEG is the last child line of its parent
-sexp."
-  (save-excursion
-    (goto-char sexp-beg)
-    (let* (buffer-invisibility-spec
-           (parent-on-same-line-p (when parent-sexp-beg
-                                        (save-excursion
-                                          ;; fast jump to beginning of line
-                                          (forward-line 0)
-                                          (<= (point) parent-sexp-beg))))
-           (guide-type-last-p (tree-guide--last-line-at-current-depth-p)))
-      ;; If: parent sexp starts on same line, guide offset is offset from
-      ;; start of parent sexp, minus 1 to make room for parent guide
-      ;; char (i.e. `|' or ` ').
-      ;;
-      ;; Else: parent sexp starts on a previous line. Guide offset is
-      ;; distance from first non-whitespace char on line, plus
-      ;; width of parent guide's handle char(s).
-      (cons (if parent-on-same-line-p
-                (1- (- sexp-beg parent-sexp-beg))
-              (let ((indentation (current-indentation))
-                    (column-pos (save-excursion
-                                  (goto-char sexp-beg)
-                                  (current-column))))
-                (+ (- column-pos indentation)
-                   tree-guide-handle-width)))
-            guide-type-last-p))))
-
-(defun tree-guide--compute-guide-offsets-and-types (&optional guide-offsets-and-types)
-  "Compute the column positions for the guides on the current line.
-
-The GUIDE-OFFSETS-AND-TYPES argument is used internally for passing intermediate
-results during recursive calls, and should normally be omitted when
-calling this function from other functions.
+(defun tree-guide--compute-guide-offsets-and-flags-for-current-line ()
+  "Compute the guide offsets and flags for the current line.
 
 The return value is a list of cons cells, where the CAR is the column
 position for a guide, and the CDR is the LAST-CHILD flag. The
 LAST-CHILD flag is non-nil when is ancestor sexp that owns the guide
 is the last child of its parent."
   (save-excursion
-    ;; Note: I set `buffer-invisibility-spec' to nil here to work around a
-    ;; strange intermittent bug, where `goto-char' sometimes moves point
-    ;; to the beginning of the line, rather than the requested target
-    ;; location (i.e. the open paren of the parent sexp). It is probably
-    ;; related to the following excerpt of the "Invisible Text" section in
-    ;; the Emacs manual [1]:
+    ;; Note: I set `buffer-invisibility-spec' to nil here to work
+    ;; around a strange intermittent bug, where `goto-char' sometimes
+    ;; moves point to the beginning of the line, rather than the
+    ;; target position (i.e. the open paren of the parent sexp). It is
+    ;; probably related to the following excerpt of the "Invisible
+    ;; Text" section in the Emacs manual [1]:
     ;;
     ;;   "If a command ends with point inside or at the boundary of
     ;;   invisible text, the main editing loop relocates point to one of
@@ -146,39 +106,53 @@ is the last child of its parent."
     ;;   of relocation so that it is the same as the overall movement
     ;;   direction of the command..."
     ;;
-    ;; I've tried just setting `buffer-invisibility-spec' to nil for both
-    ;; `current-column' and `goto-char' but the bug still occurred, so
-    ;; I'm not exactly sure where the problem is.
-    ;;
     ;; [1]: https://www.gnu.org/software/emacs/manual/html_node/elisp/Invisible-Text.html
     (let* (buffer-invisibility-spec
-           (parser-state (syntax-ppss))
-           (parent-sexp-beg (nth 1 parser-state))
-           (guide-offset-and-type (tree-guide--compute-guide-offset-and-type
-                                   (point)
-                                   parent-sexp-beg)))
-      (push guide-offset-and-type guide-offsets-and-types)
-      ;; if: there is no parent sexp, finish and return the result
-      (if (null parent-sexp-beg)
-          guide-offsets-and-types
-        ;; else: move point to beginning of parent sexp and recurse
-        (goto-char parent-sexp-beg)
-        (tree-guide--compute-guide-offsets-and-types guide-offsets-and-types)))))
+           guide-offsets-and-flags
+           done)
+      ;; set initial position of point to first non-whitespace char
+      ;; on current line
+      (move-to-column (current-indentation))
+      (while (not done)
+        (let* ((parent-sexp-beg (nth 1 (syntax-ppss)))
+               (last-child-p (tree-guide--last-line-at-current-depth-p))
+               (parent-on-same-line-p (when parent-sexp-beg
+                                        (save-excursion
+                                          ;; fast jump to beginning of line
+                                          (forward-line 0)
+                                          (<= (point) parent-sexp-beg))))
+               (parent-column (if parent-sexp-beg
+                                  (save-excursion
+                                    (goto-char parent-sexp-beg)
+                                    (current-column))
+                                0))
+               (guide-offset (- (current-column) parent-column)))
+          (push (list guide-offset parent-on-same-line-p last-child-p)
+                guide-offsets-and-flags)
+          ;; Set up for next `while' loop iteration, by moving point to
+          ;; beginning of parent sexp. If there is no parent sexp,
+          ;; we are done.
+          (if parent-sexp-beg
+              (goto-char parent-sexp-beg)
+            (setq done t))))
+      guide-offsets-and-flags)))
 
-(defun tree-guide--make-guide-string (guide-offsets-and-types)
+(defun tree-guide--make-guide-string (guide-offsets-and-flags)
   "Make a guide string from GUIDE-OFFSETS-AND-TYPES.
 
 For example, if GUIDE-OFFSETS-AND-TYPES is ((1) (3) (6 . t)), the return value
 will be '| | ╰'.
 
-See the docstring for `tree-guide--compute-guide-offsets-and-types' for
+See the docstring for `tree-guide--compute-guide-offsets-and-flags' for
 further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
   (let (guide-string-parts
-        (num-guides (length guide-offsets-and-types)))
+        (num-guides (length guide-offsets-and-flags)))
     (dotimes (i num-guides)
       (let* ((rightmost-guide-p (>= i (1- num-guides)))
-             (guide-offset (car (nth i guide-offsets-and-types)))
-             (guide-type-last-p (cdr (nth i guide-offsets-and-types)))
+             (guide-offset-and-flags (nth i guide-offsets-and-flags))
+             (guide-offset (nth 0 guide-offset-and-flags))
+             (parent-on-same-line-p (nth 1 guide-offset-and-flags))
+             (guide-type-last-p (nth 2 guide-offset-and-flags))
              (guide-char (if rightmost-guide-p
                               (if guide-type-last-p
                                   tree-guide--guide-char-with-handle-last
@@ -186,11 +160,11 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
                             (if guide-type-last-p
                                 tree-guide--guide-char-space
                               tree-guide--guide-char-without-handle)))
-             (num-padding-chars (max
-                                 guide-offset
-                                 (if rightmost-guide-p
-                                     tree-guide-handle-width
-                                   0)))
+             (num-padding-chars (if parent-on-same-line-p
+                                    (max (1- guide-offset) 0)
+                                  (max
+                                   (1- guide-offset)
+                                   tree-guide-min-handle-width)))
              (padding-char (if rightmost-guide-p
                                tree-guide--guide-char-handle
                              tree-guide--guide-char-space)))
@@ -296,8 +270,8 @@ there were no extraneous overlays that needed to be removed."
     ;; because `current-indentation' ignores invisible whitespace chars.
     (let (buffer-invisibility-spec)
       (move-to-column (current-indentation)))
-    (let* ((guide-offsets-and-types (tree-guide--compute-guide-offsets-and-types))
-           (guide-string (tree-guide--make-guide-string guide-offsets-and-types))
+    (let* ((guide-offsets-and-flags (tree-guide--compute-guide-offsets-and-flags-for-current-line))
+           (guide-string (tree-guide--make-guide-string guide-offsets-and-flags))
            (line-end (save-excursion (forward-line 1) (point)))
            (line-beg (save-excursion (forward-line 0) (point)))
            (existing-overlays (seq-filter
@@ -309,7 +283,7 @@ there were no extraneous overlays that needed to be removed."
       ;; `tree-guide-min-depth', there are no guides that need to be
       ;; displayed at the beginning of this line. We need to delete any
       ;; existing overlays, and return non-nil if any overlays were deleted.
-      (if (<= (length guide-offsets-and-types) tree-guide-min-depth)
+      (if (<= (length guide-offsets-and-flags) tree-guide-min-depth)
           (when existing-overlays
             (mapc #'delete-overlay existing-overlays))
         ;; Else: One or more guides need to be displayed at the
