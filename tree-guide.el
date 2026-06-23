@@ -15,6 +15,9 @@
 Top-level sexps are at depth 0, children of top-level sexps are at
 depth 1, and so on.")
 
+(defcustom tree-guide-face 'shadow
+  "The face used to render the tree guides.")
+
 (defvar tree-guide--guide-char-with-handle "├")
 (defvar tree-guide--guide-char-with-handle-last "╰")
 (defvar tree-guide--guide-char-without-handle "│")
@@ -169,9 +172,12 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
                                tree-guide--guide-char-handle
                              tree-guide--guide-char-space)))
         (when (>= i tree-guide-min-depth)
-          (push (concat
-                 guide-char
-                 (string-join (make-list num-padding-chars padding-char)))
+          (push (propertize
+                 (concat
+                  guide-char
+                  (string-join (make-list num-padding-chars padding-char)))
+                 'face
+                 tree-guide-face)
                 guide-string-parts))))
     (string-join (nreverse guide-string-parts))))
 
