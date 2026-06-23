@@ -141,13 +141,13 @@ is the last child of its parent."
       guide-offsets-and-flags)))
 
 (defun tree-guide--make-guide-string (guide-offsets-and-flags)
-  "Make a guide string from GUIDE-OFFSETS-AND-TYPES.
+  "Make a guide string from GUIDE-OFFSETS-AND-FLAGS.
 
-For example, if GUIDE-OFFSETS-AND-TYPES is ((1) (3) (6 . t)), the return value
+For example, if GUIDE-OFFSETS-AND-FLAGS is ((1) (3) (6 . t)), the return value
 will be '| | ╰'.
 
 See the docstring for `tree-guide--compute-guide-offsets-and-flags' for
-further information about the structure/meaning of GUIDE-OFFSETS-AND-TYPES."
+further information about the structure/meaning of GUIDE-OFFSETS-AND-FLAGS."
   (let (guide-string-parts
         (num-guides (length guide-offsets-and-flags)))
     (dotimes (i num-guides)
