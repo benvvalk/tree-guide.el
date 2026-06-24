@@ -157,12 +157,12 @@ further information about the structure/meaning of GUIDE-OFFSETS-AND-FLAGS."
              (parent-on-same-line-p (nth 1 guide-offset-and-flags))
              (guide-type-last-p (nth 2 guide-offset-and-flags))
              (guide-char (if rightmost-guide-p
-                              (if guide-type-last-p
-                                  tree-guide--guide-char-with-handle-last
-                                tree-guide--guide-char-with-handle)
-                            (if guide-type-last-p
-                                tree-guide--guide-char-space
-                              tree-guide--guide-char-without-handle)))
+                             (if guide-type-last-p
+                                 tree-guide--guide-char-with-handle-last
+                               tree-guide--guide-char-with-handle)
+                           (if guide-type-last-p
+                               tree-guide--guide-char-space
+                             tree-guide--guide-char-without-handle)))
              (num-padding-chars (if parent-on-same-line-p
                                     (max (1- guide-offset) 0)
                                   (max
@@ -341,8 +341,8 @@ user input."
   ;; (e.g. a key press):
   ;;
   ;; * RESUME-BEFORE: The buffer position we should work backwards from,
-;; when updating lines that precede CHANGE-REGION.
-;;
+  ;; when updating lines that precede CHANGE-REGION.
+  ;;
   ;; * RESUME-BEG / RESUME-AFTER: The sub-range of CHANGE-REGION where
   ;; we still need to update the indentation/guide overlays.
   ;;
@@ -390,10 +390,10 @@ user input."
         (when (marker-position resume-after)
           (while (and (not (eobp))
                       (tree-guide--update-or-create-overlays-for-current-line))
-           (forward-line 1)
-           ;; Save progress after updating each line, in case we are
-           ;; interrupted by user input.
-           (set-marker resume-after (point))))
+            (forward-line 1)
+            ;; Save progress after updating each line, in case we are
+            ;; interrupted by user input.
+            (set-marker resume-after (point))))
         (set-marker resume-after nil)
         ;; Update lines preceding the change region one-by-one,
         ;; until we encounter a line where the existing indentation
@@ -511,14 +511,14 @@ This function is invoked by `after-change-functions'."
   (push (cons (set-marker (make-marker) beg) (set-marker (make-marker) end))
         tree-guide--change-list)
   ;; For reasons I don't fully understand, I need to re-arm the idle
-;; timer here, to ensure that it fires reliably after each buffer
-;; edit.  Otherwise, the timer sometimes fails to fire after editing
-;; the buffer, and guides don't get updated until the user presses an
-;; additional key.
+  ;; timer here, to ensure that it fires reliably after each buffer
+  ;; edit.  Otherwise, the timer sometimes fails to fire after editing
+  ;; the buffer, and guides don't get updated until the user presses an
+  ;; additional key.
   ;; 
   ;; I have seen other modes implement the same workaround. For example,
-;; see discussion at [1], or the source code for
-;; `aggressive-indent-mode'.
+  ;; see discussion at [1], or the source code for
+  ;; `aggressive-indent-mode'.
   ;;
   ;; [1]: https://emacs.stackexchange.com/a/71615
   (tree-guide--update-timer-rearm))
