@@ -629,10 +629,13 @@ mode."
   (add-to-invisibility-spec 'tree-guide)
   (tree-guide--indent-advice-init)
   (tree-guide--indent-command-hooks-init)
-  (tree-guide--update-timer-rearm)
   (add-hook 'after-change-functions #'tree-guide--record-buffer-change nil t)
   (add-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown nil t)
-  (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker)))))
+  ;; add change region for entire buffer, so that initial guides get
+  ;; created on each line
+  (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker))))
+  ;; (tree-guide--process-updates-while-no-input (current-buffer))
+  (tree-guide--update-timer-rearm))
 
 (defun tree-guide--mode-teardown ()
   "Perform necessary teardown when disabling tree-Guide mode."
