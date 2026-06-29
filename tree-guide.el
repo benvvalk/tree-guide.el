@@ -378,11 +378,10 @@ user input."
           (forward-line)
           ;; Save progress after updating each line, in case we are
           ;; interrupted by user input.
-          (set-marker resume-beg (point))
-          (when (> (point) end)
-            (set-marker resume-end (marker-position resume-beg))))
-        (set-marker resume-beg nil)
-        (set-marker resume-end nil)
+          (if (< (point) end)
+              (set-marker resume-beg (point))
+            (set-marker resume-beg nil)
+            (set-marker resume-end nil)))
         ;; Update lines following the change region one-by-one,
         ;; until we encounter a line where the existing indentation
         ;; and guide overlays are already up-to-date, or we reach the
