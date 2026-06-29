@@ -409,29 +409,19 @@ user input."
             (set-marker resume-before (point)))
           (set-marker resume-before nil))))
     ;; Return a list of ranges that tells us where we need to resume
-    ;; the line updates on the next idle timer event, if we were
-    ;; interrupted. We may need to return up to two ranges, because
-    ;; we need to update the lines both before and after the change
-    ;; region.
+    ;; the line updates next time, if we were interrupted by input. We
+    ;; may need to return up to three ranges, because we also need to
+    ;; update the lines before and after the change region.
     ;;
-    ;; If we managed to update all lines before being interrupted by
-    ;; user input, return nil.
+    ;; If we managed to update all lines before being interrupted,
+    ;; return nil.
     (let (resume-ranges)
-      ;; If: `resume-beg' and `resume-end' are non-nil, it means we
-      ;; didn't finish updating the lines within the change region. We
-      ;; don't need to explicitly include
-      ;; `resume-before'/`resume-after' in the returned list of
-      ;; ranges, because those ranges will automatically be recreated.
-      (if (and (marker-position resume-beg) (marker-position resume-end))
-          (push (cons resume-beg resume-end) resume-ranges)
-        ;; Else: We finished updating the lines within the change region.
-        ;; Return the ranges for `resume-before' and/or `resume-after',
-        ;; depending on how many lines we managed to update before
-        ;; getting interrupted.
-        (when (marker-position resume-after)
-          (push (cons resume-after resume-after) resume-ranges))
-        (when (marker-position resume-before)
-          (push (cons resume-before resume-before) resume-ranges)))
+      (when (marker-position resume-before)
+        (push (cons resume-before resume-before) resume-ranges))
+      (when (and (marker-position resume-beg) (marker-position resume-end))
+        (push (cons resume-beg resume-end) resume-ranges))
+      (when (marker-position resume-after)
+        (push (cons resume-after resume-after) resume-ranges))
       resume-ranges)))
 
 (defun tree-guide--delete-all-overlays ()
