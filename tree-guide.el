@@ -315,7 +315,7 @@ there were no extraneous overlays that needed to be removed."
     (or indentation-overlay-updated-p
         guide-overlay-updated-p)))
 
-(defun tree-guide--update-or-create-overlays-for-change-region (change-region)
+(defun tree-guide--update-or-create-overlays-for-change-region (change-region &optional strict-bounds-p)
   "Update indentation and guide overlays in response to a buffer edit.
 
 CHANGE-REGION is a cons cell of the form (BEG . END), which describes
@@ -331,11 +331,16 @@ overlays on every (logical) line of the buffer!
 If this function is interrupted by user input, it will return a list
 of CHANGE-REGIONs that we can feed back into this function to resume
 the work. This ensures that we are able to make incremental progress
-on very large updates.
+on very large updates. When this function successfully completes all
+updates without being interrupted, the return value is nil.
 
- This function returns nil if it successfully completes all
-indentation/guide overlay updates without being interrupted by
-user input."
+By default, this function will continue to update lines before and
+after CHANGE-REGION, until it encounters a line that is unchanged
+after recomputing the indentation/guide overlays. However, if
+STRICT-BOUNDS-P is non-nil, then this function will limit itself to
+updating the lines that overlap CHANGE-REGION. We set this flag when
+we are updating the lines within the visible window, in order to makes
+the guide updates feel fast/responsive as possible."
   ;; The RESUME-* variables are used to record where we should
   ;; resume updating lines, if we are interrupted by user input
   ;; (e.g. a key press):
@@ -350,18 +355,20 @@ user input."
   ;; when updating lines that follow CHANGE-REGION.
   (let* ((beg (car change-region))
          (end (cdr change-region))
-         (resume-before-pos (save-excursion
-                              (goto-char beg)
-                              (when (= (forward-line -1) 0)
-                                (point))))
+         (resume-before-pos (unless strict-bounds-p
+                              (save-excursion
+                                (goto-char beg)
+                                (when (= (forward-line -1) 0)
+                                  (point)))))
          (resume-before (set-marker (make-marker) resume-before-pos))
          (resume-beg (set-marker (make-marker) beg))
          (resume-end (set-marker (make-marker) end))
-         (resume-after-pos (save-excursion
-                             (goto-char end)
-                             (forward-line 1)
-                             (when (not (eobp))
-                               (point))))
+         (resume-after-pos (unless strict-bounds-p
+                             (save-excursion
+                               (goto-char end)
+                               (forward-line 1)
+                               (when (not (eobp))
+                                 (point)))))
          (resume-after (set-marker (make-marker) resume-after-pos)))
     (save-excursion
       ;; We use `while-no-input' to interrupt the work when Emacs receives
@@ -429,6 +436,117 @@ buffer."
   (remove-overlays nil nil 'category 'tree-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
 
+;;; Set operations on line ranges
+;; (used by live update algorithm below)
+
+(defun tree-guide--range-intersect (range1 range2)
+  "Return the line range that is the intersection of line ranges RANGE1
+and RANGE2.
+
+ The returned value is a cons cell, where the CAR is the starting line
+number and the CDR is the end line number (inclusive). If the ranges
+don't intersect, the return value will be nil.
+
+Example: If RANGE1 is '(1 . 5) and RANGE2 is '(4 . 9), then the result
+is '(4 . 5)."
+  (let* ((beg1 (car range1))
+         (beg2 (car range2))
+         (end1 (cdr range1))
+         (end2 (cdr range2))
+         (max-beg (max beg1 beg2))
+         (min-end (min end1 end2)))
+    ;; If `max-beg' > `min-end', it means that `range1' and
+    ;; `range2' do not intersect.
+    (when (<= max-beg min-end)
+      (cons max-beg min-end))))
+
+(defun tree-guide--range-merge (range1 range2)
+  "Return the merged range for RANGE1 and RANGE2.
+
+Return nil if RANGE1 and RANGE2 are not overlapping or directly
+adjacent."
+  (let* ((beg1 (car range1))
+         (beg2 (car range2))
+         (end1 (cdr range1))
+         (end2 (cdr range2))
+         (max-beg (max beg1 beg2))
+         (min-end (min end1 end2)))
+    ;; When ranges intersect or are adjacent.
+    (when (<= max-beg (1+ min-end))
+      (cons (min beg1 beg2) (max end1 end2)))))
+
+(defun tree-guide--sorted-range-list-insert (range range-list)
+  "Insert RANGE into the sorted range list RANGE-LIST, and
+return the new sorted range list.
+
+If RANGE overlaps existing ranges in RANGE-LIST, it will be
+merged with those ranges.
+
+Note: This function modifies the original list RANGE-LIST. In other
+words, the returned list reuses the cons cells from RANGE-LIST."
+  (let ((merged-range range)
+        result)
+    (while (and range-list merged-range)
+      (let ((current-range (car range-list)))
+        (if (< (cdr merged-range) (1- (car current-range)))
+            ;; If: `merged-range' ends before `current-range' then we are done,
+            ;; because we know `merged-range' will not overlap with any of the
+            ;; remaining ranges in `range-list'. (We know this because
+            ;; `range-list' is assumed to be sorted).
+            (progn
+              (push merged-range result)
+              (setq result (nconc (nreverse range-list) result))
+              ;; signal to exit `while' loop
+              (setq merged-range nil))
+          ;; Else: Check if `merged-range' overlaps `current-range'.
+          ;; If `merge-result' is non-nil, it means the ranges overlap.
+          ;; If `merge-result' is nil, it means that `merged-range'
+          ;; should be inserted after `current-range'.
+          (if-let ((merge-result (tree-guide--range-merge merged-range current-range)))
+              (setq merged-range merge-result)
+            (push current-range result))
+          ;; Prepare for next `while' loop iteration.
+          (pop range-list))))
+    ;; Edge case: If `merged-range' has not yet been inserted, it means
+    ;; that `merged-range' is to the right of all existing ranges in
+    ;; `range-list', and needs be inserted at the end of `result'.
+    (when merged-range
+      (push merged-range result))
+    (nreverse result)))
+
+(defun tree-guide--sorted-range-list-subtract (range range-list)
+  "Subtract RANGE from the sorted range list RANGE-LIST, and return
+the new sorted range list.
+
+Note: This function modifies the original list RANGE-LIST. In other
+words, the returned list reuses the cons cells from RANGE-LIST."
+  (let ((beg (car range))
+        (end (cdr range))
+        result)
+    (dolist (current-range range-list)
+      (let ((current-beg (car current-range))
+            (current-end (cdr current-range)))
+        (if (or (< current-end beg) (> current-beg end))
+            ;; If ranges don't overlap, keep current range.
+            (push current-range result)
+          ;; Else, ranges overlap.
+          ;; Subtract `range' from `current-range', which may split
+          ;; `current-range' into two ranges.
+          (when (< current-beg beg)
+            (push (cons current-beg (1- beg)) result))
+          (when (> current-end end)
+            (push (cons (1+ end) current-end) result)))))
+    (nreverse result)))
+
+(defun tree-guide--sorted-range-list-intersect (range range-list)
+  "Return a list of ranges that represent the intersections between
+RANGE and the sorted range list RANGE-LIST."
+  (let (result)
+    (dolist (current-range range-list)
+      (when-let ((intersection (tree-guide--range-intersect current-range range)))
+        (push intersection result)))
+    (nreverse result)))
+
 ;;; Live update algorithm
 ;;
 ;; When the user edits the buffer, we need to quickly update the
@@ -458,6 +576,31 @@ buffer."
 (defvar-local tree-guide--update-timer nil
   "Idle timer that updates the guides, when the user edits the buffer.")
 
+(defun tree-guide--visible-change-list (buffer)
+  "Return the visible line ranges that need to be updated.
+
+The returned line ranges are the subset of line ranges from
+`tree-guide--change-list' that are currently visible in one or more
+windows.
+
+We use this function to update indentation/guide overlays for visible
+lines before non-visible lines, in order to make the guide updates
+appear more responsive to the user. For example, if the user enables
+`tree-guide-mode' in a large lisp file, we want to create the guides
+for the visible lines, before we create the guides for the lines that
+are off-screen."
+  (let (visible-change-list)
+    ;; BUFFER may be displayed in multiple windows. Compute the
+    ;; intersection of `tree-guide--change-list' with the visible
+    ;; ranges in *all* windows.
+    (dolist (window (get-buffer-window-list buffer))
+      (let* ((visible-range (cons (window-start window) (window-end window))))
+        (when-let ((intersection-ranges (tree-guide--sorted-range-list-intersect
+                                         visible-range tree-guide--change-list)))
+          (setq visible-change-list
+                (nconc intersection-ranges visible-change-list)))))
+    (nreverse visible-change-list)))
+
 (defun tree-guide--process-updates-while-no-input (buffer)
   "Update the indentation/guide overlays in response to buffer edits.
 
@@ -465,6 +608,24 @@ To keep Emacs responsive, this function halts work when
 any user input occurs (e.g. a key press)."
   (with-current-buffer buffer
     (catch 'done
+      ;; Update visible line ranges first, so that updates appear more
+      ;; responsive to the user. This is particularly important when
+      ;; the user first enables `tree-guide-mode' and we are creating
+      ;; the initial guides. Otherwise, the user might be a waiting a
+      ;; long time for the guides to appear in whatever window of the file
+      ;; they are currently viewing, especially if file is large.
+      (when-let ((visible-change-list (tree-guide--visible-change-list buffer)))
+        (while-let ((change-region (pop visible-change-list)))
+          ;; `tree-guide--update-or-create-overlays-for-change-region'
+          ;; returns nil if it successfully completes the updates
+          ;; without being interrupted by user input.
+          (if (tree-guide--update-or-create-overlays-for-change-region change-region t)
+              ;; Return nil to indicate that we were interrupted.
+              (throw 'done nil)
+            (setq tree-guide--change-list
+                  (tree-guide--sorted-range-list-subtract
+                   change-region
+                   tree-guide--change-list)))))
       (while-let ((change-region (pop tree-guide--change-list)))
         ;; When
         ;; `tree-guide--update-or-create-overlays-for-change-region'
@@ -472,7 +633,10 @@ any user input occurs (e.g. a key press)."
         ;; line updates were interrupted by user input.
         (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
           (dolist (resume-range resume-ranges)
-            (push resume-range tree-guide--change-list))
+            (setq tree-guide--change-list
+                  (tree-guide--sorted-range-list-insert
+                   resume-range
+                   tree-guide--change-list)))
           ;; Return nil to indicate that we were interrupted.
           (throw 'done nil)))
       ;; Return t to indicate that we processed all pending
