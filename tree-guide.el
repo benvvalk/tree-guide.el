@@ -316,32 +316,52 @@ there were no extraneous overlays that needed to be removed."
     (or indentation-overlay-updated-p
         guide-overlay-updated-p)))
 
-(defun tree-guide--update-or-create-overlays-for-change-region (change-region &optional strict-bounds-p)
-  "Update indentation and guide overlays in response to a buffer edit.
+(defun tree-guide--current-line-on-screen-p ()
+  "Return non-nil if line containing point is visible."
+  (let* ((line-beg (save-excursion
+                     (forward-line 0)
+                     (point)))
+         (line-end (save-excursion
+                     (forward-line 1)
+                     (point)))
+         (max-beg (max line-beg (window-start)))
+         (min-end (min line-end (window-end))))
+    ;; Return `t' if there is at least a single character of overlap
+    ;; between the line containing point and current window.
+    (< max-beg min-end)))
+
+(defun tree-guide--update-or-create-overlays-for-change-region (change-region &optional on-screen-lines-only-p)
+  "Update lines that are affected by edits in CHANGE-REGION.
 
 CHANGE-REGION is a cons cell of the form (BEG . END), which describes
-the buffer range where the text content has changed.
+the buffer range where the text content has changed. Note that the
+lines that need to be updated in response to changing the text within
+CHANGE-REGION can extend beyond the start/end of CHANGE-REGION. For
+example, inserting an unbalanced open paren (`(') at the beginning of
+the buffer requires updating the indentation and guide overlays on
+every (logical) line of the buffer, even though CHANGE-REGION is only
+a single character wide!
 
 This function halts its work as soon as any user input occurs, such as
 pressing a key. This is important to keep Emacs responsive, because
 some types of buffer edits can require updating a large number of
-lines. For example, inserting an unbalanced open paren (`(') at the
-beginning of the buffer requires updating the indentation and guide
-overlays on every (logical) line of the buffer!
+lines (e.g. insert a single unbalanced paren).
 
-If this function is interrupted by user input, it will return a list
-of CHANGE-REGIONs that we can feed back into this function to resume
-the work. This ensures that we are able to make incremental progress
-on very large updates. When this function successfully completes all
-updates without being interrupted, the return value is nil.
 
-By default, this function will continue to update lines before and
-after CHANGE-REGION, until it encounters a line that is unchanged
-after recomputing the indentation/guide overlays. However, if
-STRICT-BOUNDS-P is non-nil, then this function will limit itself to
-updating the lines that overlap CHANGE-REGION. We set this flag when
-we are updating the lines within the visible window, in order to makes
-the guide updates feel fast/responsive as possible."
+This function returns a cons cell of the form (INTERRUPTED-P
+. RESUME-RANGES), where INTERRUPTED-P is non-nil if the processing was
+interrupted by user input (e.g. a key press), and RESUME-RANGES is a
+list of regions which we can pass into this function to complete the
+interrupted work.
+
+By default, this function will unconditionally update all lines that
+overlap CHANGE-REGION, and then continue to update successive lines
+before/after CHANGE-REGION as well, until it encounters a line whose
+indentation/guide overlays remain unchanged after they are recomputed.
+However, if ON-SCREEN-LINES-ONLY-P is non-nil, the updates will be
+limited to on-screen lines, and any off-screen lines that might need
+to be updated will be included in the RESUME-RANGES part of the return
+value (see previous paragraph for further explanation)."
   ;; The RESUME-* variables are used to record where we should
   ;; resume updating lines, if we are interrupted by user input
   ;; (e.g. a key press):
@@ -356,80 +376,127 @@ the guide updates feel fast/responsive as possible."
   ;; when updating lines that follow CHANGE-REGION.
   (let* ((beg (car change-region))
          (end (cdr change-region))
-         (resume-before-pos (unless strict-bounds-p
-                              (save-excursion
-                                (goto-char beg)
-                                (when (= (forward-line -1) 0)
-                                  (point)))))
+         (resume-before-pos (save-excursion
+                              (goto-char beg)
+                              (when (= (forward-line -1) 0)
+                                (point))))
+         ;; Note: We need to immediately set the position of
+         ;; `resume-before' here, otherwise we will not be able to
+         ;; recover it if we are interrupted by user input. For
+         ;; example, if we are interrupted after updating one or more
+         ;; lines in `change-region', there will be an unknown gap of
+         ;; already-updated lines between `resume-before' and
+         ;; `resume-beg'. In contrast, we can always recover the
+         ;; position of `resume-after', because it always starts one
+         ;; line after `resume-end'.
          (resume-before (set-marker (make-marker) resume-before-pos))
          (resume-beg (set-marker (make-marker) beg))
          (resume-end (set-marker (make-marker) end))
-         (resume-after-pos (unless strict-bounds-p
-                             (save-excursion
-                               (goto-char end)
-                               (forward-line 1)
-                               (when (not (eobp))
-                                 (point)))))
-         (resume-after (set-marker (make-marker) resume-after-pos)))
+         ;; Note: Unlike `resume-before', we don't need to immediately
+         ;; set `resume-after', because we will always be able to
+         ;; recover the correct position, even if we are interrupted
+         ;; while updating lines in `change-region'. See above comment
+         ;; about `resume-before' for further explanation.
+         (resume-after (make-marker))
+         (interrupted-p t)
+         resume-ranges)
     (save-excursion
       ;; We use `while-no-input' to interrupt the work when Emacs receives
       ;; user input (e.g. a key press).
       (while-no-input
-        ;; Go to beginning of first line overlapping the change
-        ;; region.
+        ;; Go to first line of `change-region'.
         (goto-char beg)
-        (forward-line 0)
-        ;; Unconditionally update all lines that overlap the change
-        ;; region.
-		(while (and (not (eobp)) (<= (point) end))
-          (tree-guide--update-or-create-overlays-for-current-line)
-          (forward-line)
-          ;; Save progress after updating each line, in case we are
-          ;; interrupted by user input.
-          (if (< (point) end)
+        ;; If `on-screen-lines-only-p' is non-nil, skip any off-screen
+        ;; lines at the beginning of `change-region'.
+        (while (and (not (eobp))
+                    (<= (point) end)
+                    on-screen-lines-only-p
+                    (not (tree-guide--current-line-on-screen-p)))
+          (forward-line))
+        ;; If skipped one or more off-screen lines at the beginning
+        ;; of `change-region'.
+        (when (> (point) beg)
+          ;; Push range of off-screen lines that still need to be updated.
+          (push (cons (set-marker (make-marker) beg) (point-marker))
+                resume-ranges)
+          ;; Record progress, in case we are interrupted by user input.
+          (if (<= (point) end)
               (set-marker resume-beg (point))
             (set-marker resume-beg nil)
             (set-marker resume-end nil)))
-        ;; Update lines following the change region one-by-one,
+        ;; Update the remaining lines in change region. If
+        ;; `on-screen-lines-only-p' is non-nil, stop as soon as we
+        ;; encounter a line that isn't on screen.
+	    (while (and (not (eobp))
+                    (<= (point) end)
+                    (or (not on-screen-lines-only-p)
+                        (tree-guide--current-line-on-screen-p)))
+          (tree-guide--update-or-create-overlays-for-current-line)
+          (forward-line)
+          ;; Record progress, in case we are interrupted by user input.
+          (if (<= (point) end)
+              (set-marker resume-beg (point))
+            (set-marker resume-beg nil)
+            (set-marker resume-end nil)))
+        ;; If we skipped one or more off-screen lines at the end of
+        ;; `change-region', we still need to update those lines in
+        ;; future call to this function.
+        (when (<= (point) end)
+          ;; Push range of off-screen lines that still need to be updated.
+          (push (cons (point-marker) (set-marker (make-marker) end))
+                resume-ranges)
+          ;; Record progress, in case we are interrupted by user input.
+          (set-marker resume-after (point))
+          (set-marker resume-beg nil)
+          (set-marker resume-end nil))
+        ;; Update lines following `change-region' one-by-one,
         ;; until we encounter a line where the existing indentation
         ;; and guide overlays are already up-to-date, or we reach the
         ;; end of the buffer.
-        (when (marker-position resume-after)
-          (while (and (not (eobp))
-                      (tree-guide--update-or-create-overlays-for-current-line))
-            (forward-line 1)
-            ;; Save progress after updating each line, in case we are
+        (while (and (not (eobp))
+                    (marker-position resume-after)
+                    (or (not on-screen-lines-only-p)
+                        (tree-guide--current-line-on-screen-p)))
+          ;; If we encountered a line that didn't change after recomputing
+          ;; the indentation/guide overlays.
+          (if (not (tree-guide--update-or-create-overlays-for-current-line))
+              ;; Mark lines following `change-region' as up-to-date.
+              (set-marker resume-after nil)
+            ;; Move to next line and record progress, in case we are
             ;; interrupted by user input.
+            (forward-line 1)
             (set-marker resume-after (point))))
-        (set-marker resume-after nil)
-        ;; Update lines preceding the change region one-by-one,
+        ;; Update lines preceding `change-region' one-by-one,
         ;; until we encounter a line where the existing indentation
         ;; and guide overlays are already up-to-date, or we reach the
         ;; beginning of the buffer.
         (when (marker-position resume-before)
-		  (goto-char resume-before)
+          (goto-char resume-before)
           (while (and (not (bobp))
-                      (tree-guide--update-or-create-overlays-for-current-line))
-            (forward-line -1)
-            ;; Save progress after updating each line, in case we are
-            ;; interrupted by user input.
-            (set-marker resume-before (point)))
-          (set-marker resume-before nil))))
-    ;; Return a list of ranges that tells us where we need to resume
-    ;; the line updates next time, if we were interrupted by input. We
-    ;; may need to return up to three ranges, because we also need to
-    ;; update the lines before and after the change region.
-    ;;
-    ;; If we managed to update all lines before being interrupted,
-    ;; return nil.
-    (let (resume-ranges)
-      (when (marker-position resume-before)
-        (push (cons resume-before resume-before) resume-ranges))
-      (when (and (marker-position resume-beg) (marker-position resume-end))
-        (push (cons resume-beg resume-end) resume-ranges))
-      (when (marker-position resume-after)
-        (push (cons resume-after resume-after) resume-ranges))
-      resume-ranges)))
+                      (marker-position resume-before)
+                      (or (not on-screen-lines-only-p)
+                          (tree-guide--current-line-on-screen-p)))
+            (if (not (tree-guide--update-or-create-overlays-for-current-line))
+                ;; Mark lines preceding `change-region' as up-to-date.
+                (set-marker resume-before nil)
+              ;; Move to previous line and record progress, in case we are
+              ;; interrupted by user input.
+              (forward-line -1)
+              (set-marker resume-before (point)))))
+        ;; We made to the end of the updates without being interrupted
+        ;; by user input (e.g. a key press).
+        (setq interrupted-p nil)))
+    ;; If `resume-before'/`resume-beg'/`resume-end'/`resume-after' markers
+    ;; are still set to valid positions, it indicates that
+    ;; we were interrupted while updating the lines before/inside/after
+    ;; `change-region'.
+    (when (marker-position resume-before)
+      (push (cons resume-before resume-before) resume-ranges))
+    (when (and (marker-position resume-beg) (marker-position resume-end))
+      (push (cons resume-beg resume-end) resume-ranges))
+    (when (marker-position resume-after)
+      (push (cons resume-after resume-after) resume-ranges))
+    (cons interrupted-p resume-ranges)))
 
 (defun tree-guide--delete-all-overlays ()
   "Destroy all overlays related to tree-Guide in the current
@@ -577,7 +644,7 @@ RANGE and the sorted range list RANGE-LIST."
 (defvar-local tree-guide--update-timer nil
   "Idle timer that updates the guides, when the user edits the buffer.")
 
-(defun tree-guide--visible-change-list (buffer)
+(defun tree-guide--visible-change-list (buffer &optional window)
   "Return the visible line ranges that need to be updated.
 
 The returned line ranges are the subset of line ranges from
@@ -590,11 +657,14 @@ appear more responsive to the user. For example, if the user enables
 `tree-guide-mode' in a large lisp file, we want to create the guides
 for the visible lines, before we create the guides for the lines that
 are off-screen."
-  (let (visible-change-list)
+  (let (visible-change-list
+        (window-list (if window
+                         (list window)
+                       (get-buffer-window-list buffer))))
     ;; BUFFER may be displayed in multiple windows. Compute the
     ;; intersection of `tree-guide--change-list' with the visible
     ;; ranges in *all* windows.
-    (dolist (window (get-buffer-window-list buffer))
+    (dolist (window window-list)
       (let* ((visible-range (cons (window-start window) (window-end window))))
         (when-let ((intersection-ranges (tree-guide--sorted-range-list-intersect
                                          visible-range tree-guide--change-list)))
@@ -602,7 +672,7 @@ are off-screen."
                 (nconc intersection-ranges visible-change-list)))))
     (nreverse visible-change-list)))
 
-(defun tree-guide--process-visible-updates-while-no-input (buffer)
+(defun tree-guide--process-visible-updates-while-no-input (buffer &optional window)
   "Update overlays for on-screen lines that are out-of-date.
 
 A line becomes out-of-date if the tree guides no longer correspond to
@@ -616,26 +686,44 @@ that Emacs stays responsive.
   The return value for this function is non-nil if one or more on-screen
 lines were successfully updated, regardless of whether the updates
 were interrupted by user input. In other words, a return value of nil
-means that there are currently no on-screen lines that need to be
+indicates that there are currently no on-screen lines that need to be
 updated."
   (let (did-work-p)
     (with-current-buffer buffer
       (catch 'done
-        (when-let ((visible-change-list (tree-guide--visible-change-list buffer)))
+        (when-let ((visible-change-list (tree-guide--visible-change-list buffer window)))
           (while-let ((change-region (pop visible-change-list)))
-            ;; `tree-guide--update-or-create-overlays-for-change-region'
-            ;; returns nil if it successfully completes the updates
-            ;; without being interrupted by user input.
-            (if (tree-guide--update-or-create-overlays-for-change-region change-region t)
-                ;; If the updates interrupted by user input, assume at least one line
-                ;; was successfully updated and return `t'.
-                (throw 'done t)
+            ;; Note: `tree-guide--update-or-create-overlays-for-change-region'
+            ;; returns a list of `resume-ranges' if it is interrupted by user
+            ;; input. Otherwise, it will return nil to indicate that all lines
+            ;; were successfully updated without being interrupted by user input.
+            (let* ((update-result
+                    (tree-guide--update-or-create-overlays-for-change-region change-region t))
+                   (interrupted-p (car update-result))
+                   (resume-ranges (cdr update-result)))
+              ;; Set `did-work-p' to indicate that one or
+              ;; more visible lines were successfully updated.
+              ;; (Even if we were interrupted by user input, assume we
+              ;; successfully updated at least one line.)
               (setq did-work-p t)
-              ;; Remove successfully updated range from `tree-guide--change-list'
+              ;; Mark region as up-to-date, by subtracting it from
+              ;; `tree-guide--change-list'.
               (setq tree-guide--change-list
                     (tree-guide--sorted-range-list-subtract
                      change-region
-                     tree-guide--change-list)))))
+                     tree-guide--change-list))
+              ;; If `resume-ranges' is non-nil, it means that our updates
+              ;; were interrupted by user input. Add `resume-ranges' back into
+              ;; `tree-guide--change-list' for later processing, and halt
+              ;; current processing immediately by throwing `done'.
+              (when resume-ranges
+                (dolist (resume-range resume-ranges)
+                  (setq tree-guide--change-list
+                        (tree-guide--sorted-range-list-insert
+                         resume-range
+                         tree-guide--change-list))))
+              (when interrupted-p
+                (throw 'done t)))))
         ;; Return t if we successfully updated one or more lines.
         did-work-p))))
 
@@ -660,14 +748,17 @@ any user input occurs (e.g. a key press)."
           ;; `tree-guide--update-or-create-overlays-for-change-region'
           ;; returns a non-nil value for `resume-ranges', it means that
           ;; line updates were interrupted by user input.
-          (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
+          (let* ((update-result (tree-guide--update-or-create-overlays-for-change-region change-region))
+                 (interrupted-p (car update-result))
+                 (resume-ranges (cdr update-result)))
             (dolist (resume-range resume-ranges)
               (setq tree-guide--change-list
                     (tree-guide--sorted-range-list-insert
                      resume-range
                      tree-guide--change-list)))
             ;; Return nil to indicate that we were interrupted.
-            (throw 'done nil)))
+            (when interrupted-p
+              (throw 'done nil))))
         ;; Return t to indicate that we processed all pending
         ;; buffer changes.
         t))))
