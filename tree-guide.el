@@ -1,6 +1,7 @@
 ;;; -*- lexical-binding: t -*-
 
 (require 'easy-mmode) ;; for `define-minor-mode'
+(require 'profiler)   ;; for `profiler-running-p', `profiler-start', etc.
 
 ;;; Guide rendering
 ;;
@@ -801,6 +802,54 @@ explanation."
 (defun tree-guide--indent-command-hooks-teardown ()
   (remove-hook 'pre-command-hook #'tree-guide--indent-pre-command-hook t)
   (remove-hook 'post-command-hook #'tree-guide--indent-post-command-hook t))
+
+;;; Benchmarking
+
+(defun tree-guide-benchmark-file (file-path)
+  "Profile creation of tree guides for an entire file."
+  (interactive "ffile: ")
+  (with-temp-buffer
+    (insert-file-contents file-path)
+    (when (profiler-running-p)
+      (profiler-stop))
+    (profiler-start 'cpu+mem)
+    (let ((result (benchmark-run 1
+                    (tree-guide--update-or-create-overlays-for-change-region
+                     (cons (point-min) (point-max))))))
+      (profiler-stop)
+      (message "tree-guide-benchmark-file for %s: wallclock: %s s, GC collections: %s, GC time: %s s"
+               file-path
+               (nth 0 result)
+               (nth 1 result)
+               (nth 2 result)))))
+
+(defun tree-guide-benchmark-visible-lines ()
+  "Profile creation of tree guides for currently visible lines."
+  (interactive)
+  ;; Temporarily disable `tree-guide-mode' during benchmark, to
+  ;; ensure that the normal idle-timer-based guide updates don't
+  ;; interfere with our results.
+  (let ((mode-was-enabled-p tree-guide-mode))
+    (when mode-was-enabled-p
+      (tree-guide-mode -1))
+    (unwind-protect
+        (progn
+          (when (profiler-running-p)
+            (profiler-stop))
+          (profiler-start 'cpu+mem)
+          (let ((result (benchmark-run 1
+                          (tree-guide--update-or-create-overlays-for-change-region
+                           (cons (window-start) (window-end))))))
+            (profiler-stop)
+            (message "tree-guide-benchmark-visible-lines: wallclock: %s s, GC collections: %s, GC time: %s s"
+                     (nth 0 result)
+                     (nth 1 result)
+                     (nth 2 result))))
+      (if mode-was-enabled-p
+          (tree-guide-mode 1)
+        ;; if `tree-guide-mode' was not enabled before running the
+        ;; benchmark, we need to delete any overlays that we created.
+        (tree-guide--delete-all-overlays)))))
 
 ;;; Minor mode definition
 
