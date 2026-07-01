@@ -601,47 +601,75 @@ are off-screen."
                 (nconc intersection-ranges visible-change-list)))))
     (nreverse visible-change-list)))
 
+(defun tree-guide--process-visible-updates-while-no-input (buffer)
+  "Update overlays for on-screen lines that are out-of-date.
+
+A line becomes out-of-date if the tree guides no longer correspond to
+the parent/child structure of the lisp code in the buffer, due to user
+edits.
+
+This function uses the built-in `while-no-input' macro to halt the
+updates as soon any user input occurs (e.g. a key press), to ensure
+that Emacs stays responsive.
+
+  The return value for this function is non-nil if one or more on-screen
+lines were successfully updated, regardless of whether the updates
+were interrupted by user input. In other words, a return value of nil
+means that there are currently no on-screen lines that need to be
+updated."
+  (let (did-work-p)
+    (with-current-buffer buffer
+      (catch 'done
+        (when-let ((visible-change-list (tree-guide--visible-change-list buffer)))
+          (while-let ((change-region (pop visible-change-list)))
+            ;; `tree-guide--update-or-create-overlays-for-change-region'
+            ;; returns nil if it successfully completes the updates
+            ;; without being interrupted by user input.
+            (if (tree-guide--update-or-create-overlays-for-change-region change-region t)
+                ;; If the updates interrupted by user input, assume at least one line
+                ;; was successfully updated and return `t'.
+                (throw 'done t)
+              (setq did-work-p t)
+              ;; Remove successfully updated range from `tree-guide--change-list'
+              (setq tree-guide--change-list
+                    (tree-guide--sorted-range-list-subtract
+                     change-region
+                     tree-guide--change-list)))))
+        ;; Return t if we successfully updated one or more lines.
+        did-work-p))))
+
 (defun tree-guide--process-updates-while-no-input (buffer)
   "Update the indentation/guide overlays in response to buffer edits.
 
 To keep Emacs responsive, this function halts work when
 any user input occurs (e.g. a key press)."
-  (with-current-buffer buffer
-    (catch 'done
-      ;; Update visible line ranges first, so that updates appear more
-      ;; responsive to the user. This is particularly important when
-      ;; the user first enables `tree-guide-mode' and we are creating
-      ;; the initial guides. Otherwise, the user might be a waiting a
-      ;; long time for the guides to appear in whatever window of the file
-      ;; they are currently viewing, especially if file is large.
-      (when-let ((visible-change-list (tree-guide--visible-change-list buffer)))
-        (while-let ((change-region (pop visible-change-list)))
+  ;; If there are on-screen lines that need to be updated,
+  ;; update only those and exit. We need to exit as quickly
+  ;; as possible because the line updates won't become visible
+  ;; until we return control to Emacs.
+  ;; 
+  ;; If there are no on-screen lines that need to be updated,
+  ;; update as many off-screen lines as possible before being
+  ;; interrupted by user input (e.g. a key press.)
+  (unless (tree-guide--process-visible-updates-while-no-input buffer)
+    (with-current-buffer buffer
+      (catch 'done
+        (while-let ((change-region (pop tree-guide--change-list)))
+          ;; When
           ;; `tree-guide--update-or-create-overlays-for-change-region'
-          ;; returns nil if it successfully completes the updates
-          ;; without being interrupted by user input.
-          (if (tree-guide--update-or-create-overlays-for-change-region change-region t)
-              ;; Return nil to indicate that we were interrupted.
-              (throw 'done nil)
-            (setq tree-guide--change-list
-                  (tree-guide--sorted-range-list-subtract
-                   change-region
-                   tree-guide--change-list)))))
-      (while-let ((change-region (pop tree-guide--change-list)))
-        ;; When
-        ;; `tree-guide--update-or-create-overlays-for-change-region'
-        ;; returns a non-nil value for `resume-ranges', it means that
-        ;; line updates were interrupted by user input.
-        (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
-          (dolist (resume-range resume-ranges)
-            (setq tree-guide--change-list
-                  (tree-guide--sorted-range-list-insert
-                   resume-range
-                   tree-guide--change-list)))
-          ;; Return nil to indicate that we were interrupted.
-          (throw 'done nil)))
-      ;; Return t to indicate that we processed all pending
-      ;; buffer changes.
-      t)))
+          ;; returns a non-nil value for `resume-ranges', it means that
+          ;; line updates were interrupted by user input.
+          (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
+            (dolist (resume-range resume-ranges)
+              (setq tree-guide--change-list
+                    (tree-guide--sorted-range-list-insert
+                     resume-range
+                     tree-guide--change-list)))
+            ;; Return nil to indicate that we were interrupted.
+            (throw 'done nil)))
+        ;; Return t to indicate that we processed all pending
+        ;; buffer changes.
+        t))))
 
 (defun tree-guide--update-timer-rearm ()
   "Reset idle timer for updating indentation and guide overlays."
@@ -787,7 +815,6 @@ mode."
   ;; add change region for entire buffer, so that initial guides get
   ;; created on each line
   (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker))))
-  ;; (tree-guide--process-updates-while-no-input (current-buffer))
   (tree-guide--update-timer-rearm))
 
 (defun tree-guide--mode-teardown ()
