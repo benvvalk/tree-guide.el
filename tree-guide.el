@@ -315,7 +315,7 @@ there were no extraneous overlays that needed to be removed."
     (or indentation-overlay-updated-p
         guide-overlay-updated-p)))
 
-(defun tree-guide--update-or-create-overlays-for-change-region (change-region)
+(defun tree-guide--update-or-create-overlays-for-change-region (change-region &optional update-bounds)
   "Update indentation and guide overlays in response to a buffer edit.
 
 CHANGE-REGION is a cons cell of the form (BEG . END), which describes
@@ -328,93 +328,166 @@ lines. For example, inserting an unbalanced open paren (`(') at the
 beginning of the buffer requires updating the indentation and guide
 overlays on every (logical) line of the buffer!
 
-If this function is interrupted by user input, it will return a list
-of CHANGE-REGIONs that we can feed back into this function to resume
-the work. This ensures that we are able to make incremental progress
-on very large updates.
+If this function is interrupted by user input, it returns a list
+of RESUME-RANGES which can be fed back into this function to complete
+the updates. This ensures that we are able to make incremental progress
+on very large updates. In the case that all necessary updates
+were completed without being interrupted by user input, the return
+value from this function is nil.
 
- This function returns nil if it successfully completes all
-indentation/guide overlay updates without being interrupted by
-user input."
-  ;; The RESUME-* variables are used to record where we should
-  ;; resume updating lines, if we are interrupted by user input
-  ;; (e.g. a key press):
-  ;;
-  ;; * RESUME-BEFORE: The buffer position we should work backwards from,
-  ;; when updating lines that precede CHANGE-REGION.
-  ;;
-  ;; * RESUME-BEG / RESUME-AFTER: The sub-range of CHANGE-REGION where
-  ;; we still need to update the indentation/guide overlays.
-  ;;
-  ;; * RESUME-AFTER: The buffer position we should work forwards from,
-  ;; when updating lines that follow CHANGE-REGION.
-  (let* ((beg (car change-region))
-         (end (cdr change-region))
-         (resume-before (make-marker))
-         (resume-beg (set-marker (make-marker) beg))
-         (resume-end (set-marker (make-marker) end))
-         (resume-after (make-marker)))
-    (save-excursion
-      ;; We use `while-no-input' to interrupt the work when Emacs receives
-      ;; user input (e.g. a key press).
-      (while-no-input
-        ;; Go to start of `change-region'.
-        (goto-char beg)
-        ;; Unconditionally update all lines that overlap `change-region'.
-		(while (and (not (eobp)) (<= (point) end))
-          (tree-guide--update-or-create-overlays-for-current-line)
-          (unless (marker-position resume-before)
-            (set-marker resume-before (save-excursion
-                                        (when (= (forward-line -1) 0)
-                                          (point)))))
-          (forward-line)
-          (when (<= (point) end)
-              (set-marker resume-beg (point))))
-        (unless (eobp)
-          (set-marker resume-after (point)))
-        (set-marker resume-beg nil)
-        (set-marker resume-end nil)
-        ;; Update lines following the change region one-by-one,
-        ;; until we encounter a line where the existing indentation
-        ;; and guide overlays are already up-to-date, or we reach the
-        ;; end of the buffer.
-        (while (and (not (eobp))
-                    (tree-guide--update-or-create-overlays-for-current-line))
-          (forward-line 1)
-          (set-marker resume-after (point)))
-        (set-marker resume-after nil)
-        ;; Update lines preceding the change region one-by-one,
-        ;; until we encounter a line where the existing indentation
-        ;; and guide overlays are already up-to-date, or we reach the
-        ;; beginning of the buffer.
+By default, this function updates all lines in CHANGE-REGION
+unconditionally, and then continues to update successive lines
+before/after CHANGE-REGION until it encounters a line that is already
+up-to-date, i.e. a line where the recomputed indentation/guide
+overlays are identical to the existing overlays.
+
+If the optional argument UPDATE-BOUNDS is provided, updates will be
+restricted to UPDATE-BOUNDS, and any buffer ranges outside of
+UPDATE-BOUNDS that might still need to be updated will be returned as
+part of RESUME-RANGES. The main purpose of UPDATE-BOUNDS is to
+restrict updates to on-screen lines, so that on-screen updates happen
+as quickly as possible."
+  (let (resume-ranges)
+    (if (and update-bounds
+             (null (tree-guide--range-intersect change-region update-bounds)))
+        (push change-region resume-ranges)
+      ;; The RESUME-* variables are used to record where we should
+      ;; resume updating lines, if we are interrupted by user input
+      ;; (e.g. a key press):
+      ;;
+      ;; * RESUME-BEFORE: The buffer position we should work backwards from,
+      ;; when updating lines that precede CHANGE-REGION.
+      ;;
+      ;; * RESUME-BEG / RESUME-AFTER: The sub-range of CHANGE-REGION where
+      ;; we still need to update the indentation/guide overlays.
+      ;;
+      ;; * RESUME-AFTER: The buffer position we should work forwards from,
+      ;; when updating lines that follow CHANGE-REGION.
+      (let* ((change-beg (car change-region))
+             (change-end (cdr change-region))
+             (update-beg (or (car update-bounds) (point-min)))
+             (update-end (or (cdr update-bounds) (point-max)))
+             (beg (max change-beg update-beg))
+             (end (min change-end update-end))
+             (resume-before (make-marker))
+             (resume-beg (set-marker (make-marker) beg))
+             (resume-end (set-marker (make-marker) end))
+             (resume-after (make-marker)))
+        ;; If `change-region' extends beyond `update-bounds', add the
+        ;; out-of-bounds subranges to `resume-ranges', to ensure that
+        ;; they will be updated later.
+        (when (< change-beg update-beg)
+          (push (cons
+                 (set-marker (make-marker) change-beg)
+                 (set-marker (make-marker) update-beg))
+                resume-ranges))
+        (when (> change-end update-end)
+          (push (cons
+                 (set-marker (make-marker) update-end)
+                 (set-marker (make-marker) change-end))
+                resume-ranges))
+        (save-excursion
+          ;; We use `while-no-input' to interrupt the work when Emacs receives
+          ;; user input (e.g. a key press).
+          (while-no-input
+            ;; Go to start of `change-region'.
+            (goto-char beg)
+            ;; Unconditionally update all lines that overlap `change-region'.
+	        (while (and (not (eobp)) (<= (point) end))
+              (tree-guide--update-or-create-overlays-for-current-line)
+              ;; Note: We need to set `resume-before' after we update
+              ;; the first line of `change-region', because after that
+              ;; there will be a unknown gap of one or more lines
+              ;; between `resume-before' and `resume-beg'.
+              (when (= (point) beg)
+                (set-marker resume-before (save-excursion
+                                            (when (= (forward-line -1) 0)
+                                              (point)))))
+              (forward-line)
+              (when (<= (point) end)
+                (set-marker resume-beg (point))))
+            (unless (eobp)
+              (set-marker resume-after (point)))
+            ;; Set `resume-beg'/`resume-end' to nil, to indicate that
+            ;; `change-region' is now fully up-to-date.
+            (set-marker resume-beg nil)
+            (set-marker resume-end nil)
+            ;; Update lines following the change region one-by-one,
+            ;; until we encounter a line where the existing indentation
+            ;; and guide overlays are already up-to-date, or we reach the
+            ;; end of the buffer.
+            (let (done-p)
+              (while (and (not (eobp))
+                          (<= (point) update-end)
+                          (not done-p))
+                (if (not (tree-guide--update-or-create-overlays-for-current-line))
+                    (setq done-p t)
+                  (forward-line 1)
+                  (set-marker resume-after (point))))
+              (when done-p
+                (set-marker resume-after nil)))
+            ;; Update lines preceding the change region one-by-one,
+            ;; until we encounter a line where the existing indentation
+            ;; and guide overlays are already up-to-date, or we reach the
+            ;; beginning of the buffer.
+            (let (done-p)
+              (when (marker-position resume-before)
+		        (goto-char resume-before)
+                (while (and (not (bobp))
+                            (>= (point) update-beg)
+                            (not done-p))
+                  (if (not (tree-guide--update-or-create-overlays-for-current-line))
+                      (setq done-p t)
+                    (forward-line -1)
+                    (set-marker resume-before (point))))
+                (when done-p
+                  (set-marker resume-before nil))))))
+        ;; Return a list of ranges that tells us where we need to resume
+        ;; the line updates next time, if we were interrupted by input. We
+        ;; may need to return up to three ranges, because we also need to
+        ;; update the lines before and after the change region.
+        ;;
+        ;; If we managed to update all lines before being interrupted,
+        ;; return nil.
         (when (marker-position resume-before)
-		  (goto-char resume-before)
-          (while (and (not (bobp))
-                      (tree-guide--update-or-create-overlays-for-current-line))
-            (forward-line -1)
-            (set-marker resume-before (point)))
-          (set-marker resume-before nil))))
-    ;; Return a list of ranges that tells us where we need to resume
-    ;; the line updates next time, if we were interrupted by input. We
-    ;; may need to return up to three ranges, because we also need to
-    ;; update the lines before and after the change region.
-    ;;
-    ;; If we managed to update all lines before being interrupted,
-    ;; return nil.
-    (let (resume-ranges)
-      (when (marker-position resume-before)
-        (push (cons resume-before resume-before) resume-ranges))
-      (when (and (marker-position resume-beg) (marker-position resume-end))
-        (push (cons resume-beg resume-end) resume-ranges))
-      (when (marker-position resume-after)
-        (push (cons resume-after resume-after) resume-ranges))
-      resume-ranges)))
+          (push (cons resume-before resume-before) resume-ranges))
+        (when (and (marker-position resume-beg) (marker-position resume-end))
+          (push (cons resume-beg resume-end) resume-ranges))
+        (when (marker-position resume-after)
+          (push (cons resume-after resume-after) resume-ranges))
+        resume-ranges))))
 
 (defun tree-guide--delete-all-overlays ()
   "Destroy all overlays related to tree-Guide in the current
 buffer."
   (remove-overlays nil nil 'category 'tree-guide)
   (remove-overlays nil nil 'category 'elisp-tred-indentation))
+
+;;; Set operations on line ranges
+;; (used by live update algorithm below)
+
+(defun tree-guide--range-intersect (range1 range2 &optional allow-zero-width-p)
+  "Return the line range that is the intersection of line ranges RANGE1
+and RANGE2.
+
+ The returned value is a cons cell, where the CAR is the starting line
+number and the CDR is the end line number (inclusive). If the ranges
+don't intersect, the return value will be nil.
+
+Example: If RANGE1 is '(1 . 5) and RANGE2 is '(4 . 9), then the result
+is '(4 . 5)."
+  (when (and range1 range2)
+    (let* ((beg1 (car range1))
+           (beg2 (car range2))
+           (end1 (cdr range1))
+           (end2 (cdr range2))
+           (max-beg (max beg1 beg2))
+           (min-end (min end1 end2)))
+      ;; If `max-beg' > `min-end', it means that `range1' and
+      ;; `range2' do not intersect.
+      (when (or (< max-beg min-end)
+                (and allow-zero-width-p (= max-beg min-end)))
+        (cons max-beg min-end)))))
 
 ;;; Live update algorithm
 ;;
