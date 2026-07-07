@@ -350,49 +350,38 @@ user input."
   ;; when updating lines that follow CHANGE-REGION.
   (let* ((beg (car change-region))
          (end (cdr change-region))
-         (resume-before-pos (save-excursion
-                              (goto-char beg)
-                              (when (= (forward-line -1) 0)
-                                (point))))
-         (resume-before (set-marker (make-marker) resume-before-pos))
+         (resume-before (make-marker))
          (resume-beg (set-marker (make-marker) beg))
          (resume-end (set-marker (make-marker) end))
-         (resume-after-pos (save-excursion
-                             (goto-char end)
-                             (forward-line 1)
-                             (when (not (eobp))
-                               (point))))
-         (resume-after (set-marker (make-marker) resume-after-pos)))
+         (resume-after (make-marker)))
     (save-excursion
       ;; We use `while-no-input' to interrupt the work when Emacs receives
       ;; user input (e.g. a key press).
       (while-no-input
-        ;; Go to beginning of first line overlapping the change
-        ;; region.
+        ;; Go to start of `change-region'.
         (goto-char beg)
-        (forward-line 0)
-        ;; Unconditionally update all lines that overlap the change
-        ;; region.
+        ;; Unconditionally update all lines that overlap `change-region'.
 		(while (and (not (eobp)) (<= (point) end))
           (tree-guide--update-or-create-overlays-for-current-line)
+          (unless (marker-position resume-before)
+            (set-marker resume-before (save-excursion
+                                        (when (= (forward-line -1) 0)
+                                          (point)))))
           (forward-line)
-          ;; Save progress after updating each line, in case we are
-          ;; interrupted by user input.
-          (if (< (point) end)
-              (set-marker resume-beg (point))
-            (set-marker resume-beg nil)
-            (set-marker resume-end nil)))
+          (when (<= (point) end)
+              (set-marker resume-beg (point))))
+        (unless (eobp)
+          (set-marker resume-after (point)))
+        (set-marker resume-beg nil)
+        (set-marker resume-end nil)
         ;; Update lines following the change region one-by-one,
         ;; until we encounter a line where the existing indentation
         ;; and guide overlays are already up-to-date, or we reach the
         ;; end of the buffer.
-        (when (marker-position resume-after)
-          (while (and (not (eobp))
-                      (tree-guide--update-or-create-overlays-for-current-line))
-            (forward-line 1)
-            ;; Save progress after updating each line, in case we are
-            ;; interrupted by user input.
-            (set-marker resume-after (point))))
+        (while (and (not (eobp))
+                    (tree-guide--update-or-create-overlays-for-current-line))
+          (forward-line 1)
+          (set-marker resume-after (point)))
         (set-marker resume-after nil)
         ;; Update lines preceding the change region one-by-one,
         ;; until we encounter a line where the existing indentation
@@ -403,8 +392,6 @@ user input."
           (while (and (not (bobp))
                       (tree-guide--update-or-create-overlays-for-current-line))
             (forward-line -1)
-            ;; Save progress after updating each line, in case we are
-            ;; interrupted by user input.
             (set-marker resume-before (point)))
           (set-marker resume-before nil))))
     ;; Return a list of ranges that tells us where we need to resume
