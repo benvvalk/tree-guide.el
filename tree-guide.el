@@ -347,28 +347,55 @@ UPDATE-BOUNDS that might still need to be updated will be returned as
 part of RESUME-RANGES. The main purpose of UPDATE-BOUNDS is to
 restrict updates to on-screen lines, so that on-screen updates happen
 as quickly as possible."
-  (let (resume-ranges)
-    (if (and update-bounds
-             (null (tree-guide--range-intersect change-region update-bounds)))
+  ;; Extend CHANGE-REGION and UPDATE-BOUNDS to include the entirety of
+  ;; their first and last logical lines. This prevents subtle bugs
+  ;; where the updates to the first/last lines might be incorrectly
+  ;; skipped.
+  (let* ((change-beg (save-excursion
+                       (goto-char (car change-region))
+                       (forward-line 0)
+                       (point)))
+         (change-end (save-excursion
+                       (goto-char (cdr change-region))
+                       (forward-line 1)
+                       (point)))
+         (update-beg (if update-bounds
+                         (save-excursion
+                           (goto-char (car update-bounds))
+                           (forward-line 0)
+                           (point))
+                       (point-min)))
+         (update-end (if update-bounds
+                         (save-excursion
+                           (goto-char (cdr update-bounds))
+                           (forward-line 1)
+                           (point))
+                       (point-max)))
+         ;; `resume-ranges' tells us which ranges still need to be
+         ;; updated, in the case that we are interrupted by user input.
+         resume-ranges)
+    ;; If CHANGE-REGION is outside of UPDATE-BOUNDS, there is no work
+    ;; to do. We simply need to return the original value
+    ;; CHANGE-REGION as sole item of `resume-ranges', so that the
+    ;; update work will be completed later.
+    (if (null (tree-guide--range-intersect
+               (cons change-beg change-end)
+               (cons update-beg update-end)))
         (push change-region resume-ranges)
-      ;; The RESUME-* variables are used to record where we should
-      ;; resume updating lines, if we are interrupted by user input
-      ;; (e.g. a key press):
-      ;;
-      ;; * RESUME-BEFORE: The buffer position we should work backwards from,
-      ;; when updating lines that precede CHANGE-REGION.
-      ;;
-      ;; * RESUME-BEG / RESUME-AFTER: The sub-range of CHANGE-REGION where
-      ;; we still need to update the indentation/guide overlays.
-      ;;
-      ;; * RESUME-AFTER: The buffer position we should work forwards from,
-      ;; when updating lines that follow CHANGE-REGION.
-      (let* ((change-beg (car change-region))
-             (change-end (cdr change-region))
-             (update-beg (or (car update-bounds) (point-min)))
-             (update-end (or (cdr update-bounds) (point-max)))
-             (beg (max change-beg update-beg))
+      (let* ((beg (max change-beg update-beg))
              (end (min change-end update-end))
+             ;; The `resume-*' variables are used to record where we should
+             ;; resume updating lines, if we are interrupted by user input
+             ;; (e.g. a key press):
+             ;;
+             ;; * `resume-before': The buffer position we should work backwards from,
+             ;; when updating lines that precede CHANGE-REGION.
+             ;;
+             ;; * `resume-beg'/`resume-end': The sub-range of CHANGE-REGION where
+             ;; we still need to update the indentation/guide overlays.
+             ;;
+             ;; * `resume-after': The buffer position we should work forwards from,
+             ;; when updating lines that follow CHANGE-REGION.
              (resume-before (make-marker))
              (resume-beg (set-marker (make-marker) beg))
              (resume-end (set-marker (make-marker) end))
@@ -393,7 +420,7 @@ as quickly as possible."
             ;; Go to start of `change-region'.
             (goto-char beg)
             ;; Unconditionally update all lines that overlap `change-region'.
-	        (while (and (not (eobp)) (<= (point) end))
+	        (while (and (not (eobp)) (< (point) end))
               (tree-guide--update-or-create-overlays-for-current-line)
               ;; Note: We need to set `resume-before' after we update
               ;; the first line of `change-region', because after that
@@ -404,7 +431,7 @@ as quickly as possible."
                                             (when (= (forward-line -1) 0)
                                               (point)))))
               (forward-line)
-              (when (<= (point) end)
+              (when (< (point) end)
                 (set-marker resume-beg (point))))
             (unless (eobp)
               (set-marker resume-after (point)))
@@ -418,7 +445,7 @@ as quickly as possible."
             ;; end of the buffer.
             (let (done-p)
               (while (and (not (eobp))
-                          (<= (point) update-end)
+                          (< (point) update-end)
                           (not done-p))
                 (if (not (tree-guide--update-or-create-overlays-for-current-line))
                     (setq done-p t)
