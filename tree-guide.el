@@ -443,32 +443,28 @@ as quickly as possible."
             ;; until we encounter a line where the existing indentation
             ;; and guide overlays are already up-to-date, or we reach the
             ;; end of the buffer.
-            (let (done-p)
-              (while (and (not (eobp))
-                          (< (point) update-end)
-                          (not done-p))
-                (if (not (tree-guide--update-or-create-overlays-for-current-line))
-                    (setq done-p t)
-                  (forward-line 1)
-                  (set-marker resume-after (point))))
-              (when done-p
-                (set-marker resume-after nil)))
+            (while (and (marker-position resume-after)
+                        (< (point) update-end))
+              (if (not (tree-guide--update-or-create-overlays-for-current-line))
+                  (set-marker resume-after nil)
+                (forward-line 1)
+                (if (eobp)
+                    (set-marker resume-after nil)
+                  (set-marker resume-after (point)))))
             ;; Update lines preceding the change region one-by-one,
             ;; until we encounter a line where the existing indentation
             ;; and guide overlays are already up-to-date, or we reach the
             ;; beginning of the buffer.
-            (let (done-p)
-              (when (marker-position resume-before)
-		        (goto-char resume-before)
-                (while (and (not (bobp))
-                            (>= (point) update-beg)
-                            (not done-p))
-                  (if (not (tree-guide--update-or-create-overlays-for-current-line))
-                      (setq done-p t)
-                    (forward-line -1)
-                    (set-marker resume-before (point))))
-                (when done-p
-                  (set-marker resume-before nil))))))
+            (when (marker-position resume-before)
+		      (goto-char resume-before)
+              (while (and (marker-position resume-before)
+                          (>= (point) update-beg))
+                (if (not (tree-guide--update-or-create-overlays-for-current-line))
+                    (set-marker resume-before nil)
+                  (forward-line -1)
+                  (if (bobp)
+                      (set-marker resume-before nil)
+                    (set-marker resume-before (point))))))))
         ;; Return a list of ranges that tells us where we need to resume
         ;; the line updates next time, if we were interrupted by input. We
         ;; may need to return up to three ranges, because we also need to
