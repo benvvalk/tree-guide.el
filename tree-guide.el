@@ -765,7 +765,6 @@ mode."
   ;; add change region for entire buffer, so that initial guides get
   ;; created on each line
   (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker))))
-  ;; (tree-guide--process-updates-while-no-input (current-buffer))
   (tree-guide--update-timer-rearm))
 
 (defun tree-guide--mode-teardown ()
