@@ -332,12 +332,13 @@ lines. For example, inserting an unbalanced open paren (`(') at the
 beginning of the buffer requires updating the indentation and guide
 overlays on every (logical) line of the buffer!
 
-If this function is interrupted by user input, it returns a list
-of RESUME-RANGES which can be fed back into this function to complete
-the updates. This ensures that we are able to make incremental progress
-on very large updates. In the case that all necessary updates
-were completed without being interrupted by user input, the return
-value from this function is nil.
+The return value of this function is a cons cell of the
+form (INTERRUPTED-P . RESUME-RANGES), where INTERRUPTED-P
+is non-nil if updates were interrupted by user input,
+and RESUME-RANGES is a list of CHANGE-REGION values that can be
+passed back into this function (one by one) to complete the updates.
+The use of RESUME-RANGES ensures that we are able to make incremental progress
+on very large updates.
 
 By default, this function updates all lines in CHANGE-REGION
 unconditionally, and then continues to update successive lines
@@ -345,12 +346,12 @@ before/after CHANGE-REGION until it encounters a line that is already
 up-to-date, i.e. a line where the recomputed indentation/guide
 overlays are identical to the existing overlays.
 
-If the optional argument UPDATE-BOUNDS is provided, updates will be
-restricted to UPDATE-BOUNDS, and any buffer ranges outside of
-UPDATE-BOUNDS that might still need to be updated will be returned as
-part of RESUME-RANGES. The main purpose of UPDATE-BOUNDS is to
-restrict updates to on-screen lines, so that on-screen updates happen
-as quickly as possible."
+However, if the optional argument UPDATE-BOUNDS is provided, only
+logical lines that overlap UPDATE-BOUNDS will be updated, and any
+buffer ranges outside of of those lines will be returned as items in
+RESUME-RANGES. The main purpose of UPDATE-BOUNDS is to restrict
+updates to on-screen lines, so that on-screen updates happen as
+quickly as possible."
   ;; Extend CHANGE-REGION and UPDATE-BOUNDS to include the entirety of
   ;; their first and last logical lines. This prevents subtle bugs
   ;; where the updates to the first/last lines might be incorrectly
@@ -375,6 +376,9 @@ as quickly as possible."
                            (forward-line 1)
                            (point))
                        (point-max)))
+         ;; indicates if we were interrupted by user input, before we could
+         ;; update all logical lines that overlap UPDATE-BOUNDS
+         interrupted-p
          ;; `resume-ranges' tells us which ranges still need to be
          ;; updated, in the case that we are interrupted by user input.
          resume-ranges)
@@ -420,6 +424,7 @@ as quickly as possible."
         (save-excursion
           ;; We use `while-no-input' to interrupt the work when Emacs receives
           ;; user input (e.g. a key press).
+          (setq interrupted-p t)
           (while-no-input
             ;; Go to start of `change-region'.
             (goto-char beg)
@@ -468,7 +473,10 @@ as quickly as possible."
                   (forward-line -1)
                   (if (bobp)
                       (set-marker resume-before nil)
-                    (set-marker resume-before (point))))))))
+                    (set-marker resume-before (point))))))
+            ;; Set `interrupted-p' to nil, to indicate that we finished
+            ;; all line updates without being interrupted by user input.
+            (setq interrupted-p nil)))
         ;; Return a list of ranges that tells us where we need to resume
         ;; the line updates next time, if we were interrupted by input. We
         ;; may need to return up to three ranges, because we also need to
@@ -482,7 +490,7 @@ as quickly as possible."
           (push (cons resume-beg resume-end) resume-ranges))
         (when (marker-position resume-after)
           (push (cons resume-after resume-after) resume-ranges))))
-    resume-ranges))
+    (cons interrupted-p resume-ranges)))
 
 (defun tree-guide--delete-all-overlays ()
   "Destroy all overlays related to tree-Guide in the current
@@ -609,14 +617,17 @@ any user input occurs (e.g. a key press)."
         ;; `tree-guide--update-or-create-overlays-for-change-region'
         ;; returns a non-nil value for `resume-ranges', it means that
         ;; line updates were interrupted by user input.
-        (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
+        (let* ((update-result (tree-guide--update-or-create-overlays-for-change-region change-region))
+               (interrupted-p (car update-result))
+               (resume-ranges (cdr update-result)))
           (dolist (resume-range resume-ranges)
             (setq tree-guide--change-list
                   (tree-guide--sorted-range-list-insert
-               resume-range
-               tree-guide--change-list)))
+                   resume-range
+                   tree-guide--change-list)))
           ;; Return nil to indicate that we were interrupted.
-          (throw 'done nil)))
+          (when interrupted-p
+            (throw 'done nil))))
       ;; Return t to indicate that we processed all pending
       ;; buffer changes.
       t)))
