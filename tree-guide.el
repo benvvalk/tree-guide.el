@@ -516,6 +516,58 @@ is '(4 . 5)."
                 (and allow-zero-width-p (= max-beg min-end)))
         (cons max-beg min-end)))))
 
+(defun tree-guide--range-merge (range1 range2)
+  "Return the merged range for RANGE1 and RANGE2.
+
+Return nil if RANGE1 and RANGE2 are not overlapping or directly
+adjacent."
+  (let* ((beg1 (car range1))
+         (beg2 (car range2))
+         (end1 (cdr range1))
+         (end2 (cdr range2))
+         (max-beg (max beg1 beg2))
+         (min-end (min end1 end2)))
+    ;; When ranges intersect or are adjacent.
+    (when (<= max-beg (1+ min-end))
+      (cons (min beg1 beg2) (max end1 end2)))))
+
+(defun tree-guide--sorted-range-list-insert (range range-list)
+  "Insert RANGE into the sorted range list RANGE-LIST, and
+return the new sorted range list.
+
+If RANGE overlaps existing ranges in RANGE-LIST, it will be
+merged with those ranges.
+
+Note: This function modifies the original list RANGE-LIST. In other
+words, the returned list reuses the cons cells from RANGE-LIST."
+  (let ((merged-range range)
+        result)
+    (while (and range-list merged-range)
+      (let ((current-range (car range-list)))
+        (if (< (cdr merged-range) (1- (car current-range)))
+            ;; If: `merged-range' ends before `current-range',
+            ;; insert `merged-range' at current position and finish.
+            (progn
+              (push merged-range result)
+              (setq result (nconc (nreverse range-list) result))
+              ;; signal to exit `while' loop
+              (setq merged-range nil))
+          ;; Else: Check if `merged-range' overlaps `current-range'.
+          ;; If `merge-result' is non-nil, it means the ranges overlap.
+          ;; If `merge-result' is nil, it means that `merged-range'
+          ;; comes after `current-range'. Insert `current-range'
+          ;; at current position and continue.
+          (if-let ((merge-result (tree-guide--range-merge merged-range current-range)))
+              (setq merged-range merge-result)
+            (push current-range result))
+          ;; Prepare for next `while' loop iteration.
+          (pop range-list))))
+    ;; Edge case: If `merged-range' has not yet been inserted, it means
+    ;; that `merged-range' needs to be inserted in the last position.
+    (when merged-range
+      (push merged-range result))
+    (nreverse result)))
+
 ;;; Live update algorithm
 ;;
 ;; When the user edits the buffer, we need to quickly update the
@@ -559,7 +611,10 @@ any user input occurs (e.g. a key press)."
         ;; line updates were interrupted by user input.
         (when-let ((resume-ranges (tree-guide--update-or-create-overlays-for-change-region change-region)))
           (dolist (resume-range resume-ranges)
-            (push resume-range tree-guide--change-list))
+            (setq tree-guide--change-list
+                  (tree-guide--sorted-range-list-insert
+               resume-range
+               tree-guide--change-list)))
           ;; Return nil to indicate that we were interrupted.
           (throw 'done nil)))
       ;; Return t to indicate that we processed all pending
