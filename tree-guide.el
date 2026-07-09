@@ -481,8 +481,8 @@ as quickly as possible."
         (when (and (marker-position resume-beg) (marker-position resume-end))
           (push (cons resume-beg resume-end) resume-ranges))
         (when (marker-position resume-after)
-          (push (cons resume-after resume-after) resume-ranges))
-        resume-ranges))))
+          (push (cons resume-after resume-after) resume-ranges))))
+    resume-ranges))
 
 (defun tree-guide--delete-all-overlays ()
   "Destroy all overlays related to tree-Guide in the current
