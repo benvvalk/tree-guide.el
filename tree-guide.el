@@ -295,16 +295,20 @@ there were no extraneous overlays that needed to be removed."
         ;; Else: One or more guides need to be displayed at the
         ;; beginning of this line.
         ;;
-        ;; Unless: there is exactly one existing overlay and it is already
-        ;; displaying the correct guide string, delete all existing overlays
-        ;; and create a new one with the correct guide string.
-        (unless (and (= (length existing-overlays) 1)
-                     (string-equal (overlay-get (car existing-overlays) 'line-prefix) guide-string))
-          (mapc #'delete-overlay existing-overlays)
-          (let* ((overlay (make-overlay line-beg line-end nil nil t)))
-            (overlay-put overlay 'category 'tree-guide)
-            (overlay-put overlay 'evaporate t)
-            (overlay-put overlay 'line-prefix guide-string)))))))
+        ;; Unless: there is exactly one existing overlay and it
+        ;; already has the correct start/end positions and guide
+        ;; string, delete all existing overlays and create a new
+        ;; overlay.
+        (let ((existing-overlay (car existing-overlays)))
+          (unless (and (= (length existing-overlays) 1)
+                       (= (overlay-start existing-overlay) line-beg)
+                       (= (overlay-end existing-overlay) line-end)
+                       (string-equal (overlay-get existing-overlay 'line-prefix) guide-string))
+           (mapc #'delete-overlay existing-overlays)
+           (let* ((overlay (make-overlay line-beg line-end nil nil t)))
+             (overlay-put overlay 'category 'tree-guide)
+             (overlay-put overlay 'evaporate t)
+             (overlay-put overlay 'line-prefix guide-string))))))))
 
 (defun tree-guide--update-or-create-overlays-for-current-line ()
   "Create or update the indentation and guide overlays for the current line."
