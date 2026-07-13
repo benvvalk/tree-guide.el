@@ -595,7 +595,7 @@ words, the returned list reuses the cons cells from RANGE-LIST."
             ;; If: `merged-range' ends before `current-range',
             ;; insert `merged-range' at current position and finish.
             (progn
-              (push merged-range result)
+              (push (tree-guide--range-to-markers merged-range) result)
               (setq result (nconc (nreverse range-list) result))
               ;; signal to exit `while' loop
               (setq merged-range nil))
