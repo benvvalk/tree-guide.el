@@ -860,13 +860,15 @@ were successfully updated without being interrupted by user input."
     (cancel-timer tree-guide--update-timer)
     (setq tree-guide--update-timer nil)))
 
-(defun tree-guide--record-buffer-change (beg end _length)
+(defun tree-guide--record-buffer-change (beg end before-length)
   "Record that a buffer change occurred between BEG and END.
 This function is invoked by `after-change-functions'."
+  (tree-guide--debug-log "record-buffer-change: (beg=%s, end=%s, before-length=%s)" beg end before-length)
   (setq tree-guide--change-list
         (tree-guide--sorted-range-list-insert
          (cons beg end)
          tree-guide--change-list))
+  (tree-guide--debug-log "record-buffer-change: change-list=%s" tree-guide--change-list)
   ;; For reasons I don't fully understand, I need to re-arm the idle
   ;; timer here, to ensure that it fires reliably after each buffer
   ;; edit.  Otherwise, the timer sometimes fails to fire after editing
