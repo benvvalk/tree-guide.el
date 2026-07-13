@@ -655,12 +655,12 @@ The intersections are returned as a sorted range list."
               (tree-guide--sorted-range-list-insert intersection result))))
     result))
 
-(defun tree-guide--sorted-range-lists-intersect (range-list1 range-list2)
+(defun tree-guide--sorted-range-lists-intersect (range-list1 range-list2 &optional allow-zero-width-p)
   "Return the intersection ranges of RANGE-LIST1 and RANGE-LIST2."
   (let (result)
     (dolist (range1 range-list1)
       (dolist (range2 range-list2)
-        (when-let (intersection (tree-guide--range-intersect range1 range2))
+        (when-let (intersection (tree-guide--range-intersect range1 range2 allow-zero-width-p))
           (setq result
                 (tree-guide--sorted-range-list-insert intersection result)))))
     result))
@@ -750,7 +750,8 @@ interrupted by user input."
         (when-let* ((on-screen-range-list (tree-guide--on-screen-range-list buffer))
                     (on-screen-change-list (tree-guide--sorted-range-lists-intersect
                                             on-screen-range-list
-                                            tree-guide--change-list)))
+                                            tree-guide--change-list
+                                            t)))
           (setq did-work-p t)
           (dolist (on-screen-change on-screen-change-list)
             (let* ((update-bounds (tree-guide--sorted-range-list-find-containing
