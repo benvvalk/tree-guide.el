@@ -356,6 +356,10 @@ quickly as possible."
   ;; their first and last logical lines. This prevents subtle bugs
   ;; where the updates to the first/last lines might be incorrectly
   ;; skipped.
+  (tree-guide--debug-log
+   "update-or-create-overlays-for-change-region: (change-region=%s, update-bounds=%s)"
+   change-region
+   update-bounds)
   (let* ((change-beg (save-excursion
                        (goto-char (car change-region))
                        (forward-line 0)
@@ -490,6 +494,10 @@ quickly as possible."
           (push (cons resume-beg resume-end) resume-ranges))
         (when (marker-position resume-after)
           (push (cons resume-after resume-after) resume-ranges))))
+    (tree-guide--debug-log
+     "update-or-create-overlays-for-change-region: returning (interrupted-p=%s, resume-ranges=%s)"
+     interrupted-p
+     resume-ranges)
     (cons interrupted-p resume-ranges)))
 
 (defun tree-guide--delete-all-overlays ()
@@ -744,14 +752,19 @@ any user input occurs (e.g. a key press).
 The return value of this function is non-nil if one or more on-screen
 lines were updated, regardless of whether the processing was
 interrupted by user input."
-  (let (did-work-p)
-    (catch 'done
-      (with-current-buffer buffer
+  (with-current-buffer buffer
+    (let (did-work-p)
+      (catch 'done
         (when-let* ((on-screen-range-list (tree-guide--on-screen-range-list buffer))
                     (on-screen-change-list (tree-guide--sorted-range-lists-intersect
                                             on-screen-range-list
                                             tree-guide--change-list
                                             t)))
+          (tree-guide--debug-log
+           "process-on-screen-updates-while-no-input: found pending on-screen changes")
+          (tree-guide--debug-log
+           "process-on-screen-updates-while-no-input: on-change-change-list=%s"
+           on-screen-change-list)
           (setq did-work-p t)
           (dolist (on-screen-change on-screen-change-list)
             (let* ((update-bounds (tree-guide--sorted-range-list-find-containing
@@ -772,8 +785,8 @@ interrupted by user input."
                        resume-range
                        tree-guide--change-list)))
               (when interrupted-p
-                (throw 'done did-work-p)))))))
-    did-work-p))
+                (throw 'done did-work-p))))))
+      did-work-p)))
 
 (defun tree-guide--process-updates-while-no-input (buffer)
   "Update any lines of BUFFER that are out-of-date.
@@ -787,11 +800,19 @@ any user input occurs (e.g. a key press).
 
 The return value of this function is non-nil if all out-of-date lines
 were successfully updated without being interrupted by user input."
+  (tree-guide--debug-log
+   "process-updates-while-no-input: change-list=%s"
+   tree-guide--change-list)
   (if (tree-guide--process-on-screen-updates-while-no-input buffer)
       ;; If we updated one or more on-screen lines, briefly return control
       ;; to Emacs so that it can immediately refresh the display, before
       ;; continuing with off-screen updates.
-      (run-with-timer 0 nil #'tree-guide--process-updates-while-no-input buffer)
+      (progn
+        (tree-guide--debug-log
+         "process-updates-while-no-input: processed on-screen updates, scheduling 0-second timer to run off-screen updates")
+        (run-with-timer 0 nil #'tree-guide--process-updates-while-no-input buffer))
+    (tree-guide--debug-log
+     "process-updates-while-no-input: no on-screen changes pending, processing off-screen changes")
     (with-current-buffer buffer
       (catch 'done
         (while-let ((change-region (pop tree-guide--change-list)))
@@ -812,16 +833,26 @@ were successfully updated without being interrupted by user input."
               (throw 'done nil))))
         ;; Return t to indicate that we processed all pending
         ;; buffer changes.
-        t))))
+        t)
+      (tree-guide--debug-log
+       "process-updates-while-no-input: stopped processing off-screen changes (finished or interrupted)")
+      (tree-guide--debug-log
+       "process-updates-while-no-input: change-list=%s"
+       tree-guide--change-list))))
 
 (defun tree-guide--update-timer-rearm ()
   "Reset idle timer for updating indentation and guide overlays."
   (tree-guide--update-timer-teardown)
-  (setq tree-guide--update-timer
-        (run-with-idle-timer 0.05 ;; seconds after Emacs becomes idle
-                             t ;; repeat
-                             #'tree-guide--process-updates-while-no-input
-                             (current-buffer))))
+  ;; I disable the idle timer in debug mode, because it generates too
+  ;; much output to be helpful.  Instead, I trigger guide updates
+  ;; manually by evaluating
+  ;; `(tree-guide--process-updates-while-no-input (current-buffer))'.
+  (unless tree-guide-debug-p
+    (setq tree-guide--update-timer
+          (run-with-idle-timer 0.05 ;; seconds after Emacs becomes idle
+                               t    ;; repeat
+                               #'tree-guide--process-updates-while-no-input
+                               (current-buffer)))))
 
 (defun tree-guide--update-timer-teardown ()
   "Stop idle timer for updating indentation and guide overlays."
@@ -945,6 +976,26 @@ explanation."
   (remove-hook 'pre-command-hook #'tree-guide--indent-pre-command-hook t)
   (remove-hook 'post-command-hook #'tree-guide--indent-post-command-hook t))
 
+;;; Debugging
+
+(defcustom tree-guide-debug-p nil
+  "If non-nil, print debug messages to \"*Messages*\" buffer.")
+
+(defun tree-guide--debug-log (format-string &rest args)
+  (when tree-guide-debug-p
+    (let* ((source-buffer (current-buffer)))
+      (with-current-buffer (get-buffer-create
+                            (format "*tree-guide debug: %s*" source-buffer))
+        (goto-char (point-max))
+        (insert
+         (apply #'format
+                (concat
+                 (format "[tree-guide %s]: "
+                         (format-time-string "%H:%M:%S:%3N"))
+                 format-string)
+                args))
+        (insert "\n")))))
+
 ;;; Minor mode definition
 
 (defun tree-guide--mode-init ()
@@ -958,7 +1009,8 @@ mode."
   ;; add change region for entire buffer, so that initial guides get
   ;; created on each line
   (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker))))
-  (tree-guide--update-timer-rearm))
+  (tree-guide--update-timer-rearm)
+  (tree-guide--debug-log "mode enabled"))
 
 (defun tree-guide--mode-teardown ()
   "Perform necessary teardown when disabling tree-Guide mode."
@@ -968,7 +1020,8 @@ mode."
   (tree-guide--update-timer-teardown)
   (tree-guide--delete-all-overlays)
   (remove-hook 'after-change-functions #'tree-guide--record-buffer-change t)
-  (remove-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown t))
+  (remove-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown t)
+  (tree-guide--debug-log "mode disabled"))
 
 (define-minor-mode tree-guide-mode
   "Display tree guides for elisp code."
