@@ -1010,8 +1010,7 @@ mode."
   (tree-guide--indent-command-hooks-init)
   (add-hook 'after-change-functions #'tree-guide--record-buffer-change nil t)
   (add-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown nil t)
-  ;; add change region for entire buffer, so that initial guides get
-  ;; created on each line
+  ;; mark entire buffer dirty for initial guide creation
   (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker))))
   (tree-guide--update-timer-rearm)
   (tree-guide--debug-log "mode enabled"))
