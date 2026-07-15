@@ -980,6 +980,49 @@ explanation."
   (remove-hook 'pre-command-hook #'tree-guide--indent-pre-command-hook t)
   (remove-hook 'post-command-hook #'tree-guide--indent-post-command-hook t))
 
+;;; Line wrapping
+;; Line wrapping generally shouldn't be used in combination with
+;; `tree-guide-mode', because it creates visual noise/confusion. So
+;; we turn it off by default.
+
+(defcustom tree-guide-truncate-lines-p t
+  "If non-nil, screen lines will be \"truncated\" while
+`tree-guide-mode' is enabled.
+
+In other words, line-wrapping (a.k.a. \"continuation lines\") will be
+turned off.
+
+The default value of this variable is non-nil, because using
+line-wrapping in combination with `tree-guide-mode' tends to create
+visual noise and confusion.")
+
+(defvar-local tree-guide--saved-truncate-lines nil)
+(defvar-local tree-guide--saved-truncate-lines-local-p nil)
+
+(defvar-local tree-guide--saved-truncate-partial-width-windows nil)
+(defvar-local tree-guide--saved-truncate-partial-width-windows-local-p nil)
+
+(defun tree-guide--truncate-lines-init ()
+  ;; save user's settings (if any)
+  (setq tree-guide--saved-truncate-lines truncate-lines)
+  (setq tree-guide--saved-truncate-lines-local-p
+	(local-variable-p 'truncate-lines))
+  (setq tree-guide--saved-truncate-partial-width-windows truncate-partial-width-windows)
+  (setq tree-guide--saved-truncate-partial-width-windows-local-p
+	(local-variable-p 'truncate-partial-width-windows))
+  ;; apply our own settings
+  (setq truncate-lines tree-guide-truncate-lines-p)
+  (setq truncate-partial-width-windows tree-guide-truncate-lines-p))
+
+(defun tree-guide--truncate-lines-teardown ()
+  ;; restore user's original settings (if any)
+  (if tree-guide--saved-truncate-lines-local-p
+      (setq truncate-lines tree-guide--saved-truncate-lines)
+    (kill-local-variable 'truncate-lines))
+  (if tree-guide--saved-truncate-partial-width-windows-local-p
+      (setq truncate-partial-width-windows tree-guide--saved-truncate-partial-width-windows)
+    (kill-local-variable 'truncate-partial-width-windows)))
+
 ;;; Debugging
 
 (defcustom tree-guide-debug-p nil
@@ -1008,6 +1051,7 @@ mode."
   (add-to-invisibility-spec 'tree-guide)
   (tree-guide--indent-advice-init)
   (tree-guide--indent-command-hooks-init)
+  (tree-guide--truncate-lines-init)
   (add-hook 'after-change-functions #'tree-guide--record-buffer-change nil t)
   (add-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown nil t)
   ;; mark entire buffer dirty for initial guide creation
@@ -1020,6 +1064,7 @@ mode."
   (remove-from-invisibility-spec 'tree-guide)
   (tree-guide--indent-advice-teardown)
   (tree-guide--indent-command-hooks-teardown)
+  (tree-guide--truncate-lines-teardown)
   (tree-guide--update-timer-teardown)
   (tree-guide--delete-all-overlays)
   (remove-hook 'after-change-functions #'tree-guide--record-buffer-change t)
