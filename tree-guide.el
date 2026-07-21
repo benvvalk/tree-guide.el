@@ -31,7 +31,7 @@ If point is not contained within a sexp, i.e. it is located
 before/after/between top-level sexps, return the end-of-buffer
 position (i.e. the value returned by `point-max')."
   (let* ((ppss (syntax-ppss))
-       (parent-sexp-beg (nth 1 ppss)))
+         (parent-sexp-beg (nth 1 ppss)))
     ;; If `parent-sexp-beg' is nil, it means that point is located between
     ;; top-level sexps. In that case, we treat the entire buffer as the
     ;; parent sexp, and return `(point-max)'.
