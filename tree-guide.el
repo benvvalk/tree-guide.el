@@ -1050,7 +1050,7 @@ is the target buffer containing the lisp source code.")
 ;;; Minor mode definition
 
 (defun tree-guide--mode-init ()
-  "Performs necessary initialization when enabling tree-Guide
+  "Performs necessary initialization when enabling Tree-Guide
 mode."
   (add-to-invisibility-spec 'tree-guide)
   (tree-guide--indent-advice-init)
