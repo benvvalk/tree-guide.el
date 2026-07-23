@@ -1026,13 +1026,17 @@ visual noise and confusion.")
 ;;; Debugging
 
 (defcustom tree-guide-debug-p nil
-  "If non-nil, print debug messages to \"*Messages*\" buffer.")
+  "If non-nil, print debug messages to dedicated log buffer.
+
+The name of the log buffer is of the form
+ \"*tree-guide-debug: SOURCE-BUFFER*\", where SOURCE-BUFFER
+is the target buffer containing the lisp source code.")
 
 (defun tree-guide--debug-log (format-string &rest args)
   (when tree-guide-debug-p
     (let* ((source-buffer (current-buffer)))
       (with-current-buffer (get-buffer-create
-                            (format "*tree-guide debug: %s*" source-buffer))
+                            (format "*tree-guide-debug: %s*" source-buffer))
         (goto-char (point-max))
         (insert
          (apply #'format
