@@ -967,7 +967,7 @@ explanation."
   ;; expected, because `lispy' commands can only be triggered when the
   ;; cursor is positioned before the open paren of a sexp.  It also
   ;; prevents `show-paren-mode' from working as intended.
-  (let (line-end-pos (line-end-position))
+  (let ((line-end-pos (line-end-position)))
     (while (and (not (eolp))
                 (invisible-p (point)))
       (goto-char (next-char-property-change (point) line-end-pos)))))
