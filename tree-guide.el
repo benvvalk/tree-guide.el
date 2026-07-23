@@ -986,42 +986,32 @@ explanation."
 ;; we turn it off by default.
 
 (defcustom tree-guide-truncate-lines-p t
-  "If non-nil, screen lines will be \"truncated\" while
+  "If non-nil, line-wrapping will be turned off while
 `tree-guide-mode' is enabled.
 
-In other words, line-wrapping (a.k.a. \"continuation lines\") will be
-turned off.
-
-The default value of this variable is non-nil, because using
-line-wrapping in combination with `tree-guide-mode' tends to create
-visual noise and confusion.")
-
-(defvar-local tree-guide--saved-truncate-lines nil)
-(defvar-local tree-guide--saved-truncate-lines-local-p nil)
-
-(defvar-local tree-guide--saved-truncate-partial-width-windows nil)
-(defvar-local tree-guide--saved-truncate-partial-width-windows-local-p nil)
+The default value of this variable is t, because using line-wrapping
+in combination with `tree-guide-mode' tends to create visual noise and
+confusion.")
 
 (defun tree-guide--truncate-lines-init ()
-  ;; save user's settings (if any)
-  (setq tree-guide--saved-truncate-lines truncate-lines)
-  (setq tree-guide--saved-truncate-lines-local-p
-	(local-variable-p 'truncate-lines))
-  (setq tree-guide--saved-truncate-partial-width-windows truncate-partial-width-windows)
-  (setq tree-guide--saved-truncate-partial-width-windows-local-p
-	(local-variable-p 'truncate-partial-width-windows))
-  ;; apply our own settings
-  (setq truncate-lines tree-guide-truncate-lines-p)
-  (setq truncate-partial-width-windows tree-guide-truncate-lines-p))
+  (tree-guide--save-local-var 'visual-line-mode)
+  ;; Note: `visual-line-mode` forces line-wrapping regardless of the
+  ;; values of `truncate-lines` / `truncate-partial-width-windows`, so
+  ;; we need to turn it off.
+  (when tree-guide-truncate-lines-p
+    (visual-line-mode -1))
+  (tree-guide--save-and-set-local-var 'truncate-lines
+				      tree-guide-truncate-lines-p)
+  (tree-guide--save-and-set-local-var 'truncate-partial-width-windows
+				      tree-guide-truncate-lines-p))
 
 (defun tree-guide--truncate-lines-teardown ()
-  ;; restore user's original settings (if any)
-  (if tree-guide--saved-truncate-lines-local-p
-      (setq truncate-lines tree-guide--saved-truncate-lines)
-    (kill-local-variable 'truncate-lines))
-  (if tree-guide--saved-truncate-partial-width-windows-local-p
-      (setq truncate-partial-width-windows tree-guide--saved-truncate-partial-width-windows)
-    (kill-local-variable 'truncate-partial-width-windows)))
+  ;; Restore original state of `visual-line-mode`.
+  (when (and (tree-guide--saved-local-var-p 'visual-line-mode)
+	     (tree-guide--saved-local-var-value 'visual-line-mode))
+    (visual-line-mode 1))
+  (tree-guide--restore-local-var 'truncate-lines)
+  (tree-guide--restore-local-var 'truncate-partial-width-windows))
 
 ;;; Debugging
 
@@ -1047,7 +1037,55 @@ is the target buffer containing the lisp source code.")
                 args))
         (insert "\n")))))
 
-;;; Minor mode definition
+;;; Saving/restoring buffer-local variables
+;; Used during mode init/teardown.
+
+(defvar-local tree-guide--saved-local-vars nil
+  "A list of buffer-local variable values that were overwritten when
+enabling Tree-Guide mode.
+
+We use this list to restore the user's original settings when
+disabling Tree-Guide mode. For example, Tree-Guide mode disables
+line-wrapping and `visual-line-mode` by default, but restores those
+settings when Tree-Guide mode is disabled.")
+
+(defun tree-guide--saved-local-var-p (var)
+  "Return non-nil if we've saved a buffer-local value for VAR."
+  (nth 1 (assoc var tree-guide--saved-local-vars)))
+
+(defun tree-guide--saved-local-var-value (var)
+  "Return the saved buffer-local value for VAR.
+
+If there is no saved buffer-local value for VAR, return nil. To
+distinguish between a value of nil and the absence of a saved value,
+use `tree-guide--saved-local-var-p`."
+  (when-let ((record (assoc var tree-guide--saved-local-vars)))
+    ;; when original variable value was buffer-local
+    (when (nth 1 record)
+      (nth 2 record))))
+
+(defun tree-guide--save-local-var (var)
+  "Save the buffer-local value of VAR, if any."
+  (push (list var (local-variable-p var) (symbol-value var))
+	tree-guide--saved-local-vars))
+
+(defun tree-guide--save-and-set-local-var (var value)
+  "Save the current buffer-local value of VAR (if any), then set the
+value of VAR to VALUE."
+  (tree-guide--save-local-var var)
+  (set (make-local-variable var) value))
+
+(defun tree-guide--restore-local-var (var)
+  "Restore VAR to its previous buffer-local or global value."
+  (when-let ((record (assoc var tree-guide--saved-local-vars)))
+    (let ((var (nth 0 record))
+	  (was-local-p (nth 1 record))
+	  (value (nth 2 record)))
+      (if was-local-p
+	  (set (make-local-variable var) value)
+	(kill-local-variable var)))))
+
+;;; Minor mode init/teardown
 
 (defun tree-guide--mode-init ()
   "Performs necessary initialization when enabling Tree-Guide
