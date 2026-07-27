@@ -302,11 +302,11 @@ there were no extraneous overlays that needed to be removed."
                        (= (overlay-start existing-overlay) line-beg)
                        (= (overlay-end existing-overlay) line-end)
                        (string-equal (overlay-get existing-overlay 'line-prefix) guide-string))
-           (mapc #'delete-overlay existing-overlays)
-           (let* ((overlay (make-overlay line-beg line-end nil nil t)))
-             (overlay-put overlay 'category 'tree-guide)
-             (overlay-put overlay 'evaporate t)
-             (overlay-put overlay 'line-prefix guide-string))))))))
+            (mapc #'delete-overlay existing-overlays)
+            (let* ((overlay (make-overlay line-beg line-end nil nil t)))
+              (overlay-put overlay 'category 'tree-guide)
+              (overlay-put overlay 'evaporate t)
+              (overlay-put overlay 'line-prefix guide-string))))))))
 
 (defun tree-guide--update-or-create-overlays-for-current-line ()
   "Create or update the indentation and guide overlays for the current line."
