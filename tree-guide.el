@@ -1045,6 +1045,56 @@ confusion.")
   (tree-guide--restore-local-var 'truncate-lines)
   (tree-guide--restore-local-var 'truncate-partial-width-windows))
 
+;;; Copy lines with guides intact
+;; Copy text to the kill ring with the tree guide characters intact.
+;; Emacs' default behaviour with `kill-region` etc. is to copy the raw
+;; buffer text without the guides (i.e. without overlays). However
+;; including the tree guides characters is very useful for showing
+;; concrete examples in docstrings, bug reports, etc.
+
+(defun tree-guide--current-line-with-guides ()
+  "Copy the current line, with guide characters intact."
+  (let* ((line-beg (save-excursion (forward-line 0) (point)))
+	 (line-end (save-excursion (forward-line 1) (point)))
+	 (indent-column (let ((tab-width 1)
+			      buffer-invisibility-spec)
+			  (current-indentation)))
+	 (indent-beg (+ line-beg indent-column))
+	 (guide-overlay (seq-find
+			 (lambda (overlay)
+			   (eq (overlay-get overlay 'category)
+			       'tree-guide))
+			 (overlays-in line-beg line-end)))
+	 (guide-string (when guide-overlay
+			 (substring-no-properties
+			  (overlay-get guide-overlay 'line-prefix)))))
+    (concat guide-string
+	    (buffer-substring-no-properties
+	     indent-beg
+	     line-end))))
+
+(defun tree-guide--copy-lines-with-guides (beg end)
+  "Copy text lines overlapping region, with guide characters intact.
+
+If no region is selected, just copy the current line."
+  (interactive
+   ;; If region is active, copy all lines overlapping region. Otherwise
+   ;; just copy the current line.
+   ;;
+   ;; Note: In the case of an active region, we use `(forward-line 0)' /
+   ;; `(forward-line 1)' to extend the region to the beginning/end of the
+   ;; first/last overlapping line.
+   (if (use-region-p)
+       (list (region-beginning) (region-end))
+     (list (point) (point))))
+  (let (lines)
+    (save-excursion
+      (goto-char beg)
+      (while (<= (point) end)
+	(push (tree-guide--current-line-with-guides) lines)
+	(forward-line 1)))
+    (kill-new (mapconcat #'identity (nreverse lines)))))
+
 ;;; Debugging
 
 (defcustom tree-guide-debug-p nil
