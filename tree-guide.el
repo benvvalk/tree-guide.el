@@ -265,7 +265,7 @@ line already existing, is displaying the correct guide characters, and
 there were no extraneous overlays that needed to be removed."
   (save-excursion
     ;; Notes:
-    ;; 
+    ;;
     ;; (1) `tree-guide--compute-guide-offsets-and-types' requires
     ;; point to be located immediately before the first non-whitespace
     ;; character on the current line.
@@ -906,7 +906,7 @@ This function is invoked by `after-change-functions'."
   ;; edit.  Otherwise, the timer sometimes fails to fire after editing
   ;; the buffer, and guides don't get updated until the user presses an
   ;; additional key.
-  ;; 
+  ;;
   ;; I have seen other modes implement the same workaround. For example,
   ;; see discussion at [1], or the source code for
   ;; `aggressive-indent-mode'.
