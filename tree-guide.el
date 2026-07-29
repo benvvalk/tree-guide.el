@@ -1192,6 +1192,7 @@ mode."
   (tree-guide--truncate-lines-teardown)
   (tree-guide--update-timer-teardown)
   (tree-guide--delete-all-overlays)
+  (setq tree-guide--change-list nil)
   (remove-hook 'after-change-functions #'tree-guide--record-buffer-change t)
   (remove-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown t)
   (remove-hook 'before-revert-hook #'tree-guide--mode-teardown t)
