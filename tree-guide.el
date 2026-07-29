@@ -214,7 +214,7 @@ extraneous overlays that needed to be removed."
          (existing-overlays (seq-filter
                              (lambda (overlay)
                                (eq (overlay-get overlay 'category)
-                                   'elisp-tred-indentation))
+                                   'tree-guide-indentation))
                              (overlays-in line-beg line-end))))
     ;; If: there is no leading whitespace on current line, we should
     ;; delete any existing indentation overlays. The return value should
@@ -239,7 +239,7 @@ extraneous overlays that needed to be removed."
         (mapc #'delete-overlay existing-overlays)
         (let* ((overlay-end (+ line-beg indent-column))
                (overlay (make-overlay line-beg overlay-end nil t nil)))
-          (overlay-put overlay 'category 'elisp-tred-indentation)
+          (overlay-put overlay 'category 'tree-guide-indentation)
           (overlay-put overlay 'evaporate t)
           (overlay-put overlay 'invisible 'tree-guide))))))
 
@@ -502,7 +502,7 @@ quickly as possible."
   "Destroy all overlays related to tree-Guide in the current
 buffer."
   (remove-overlays nil nil 'category 'tree-guide)
-  (remove-overlays nil nil 'category 'elisp-tred-indentation))
+  (remove-overlays nil nil 'category 'tree-guide-indentation))
 
 ;;; Operations on line/character ranges
 ;; (used by live update algorithm below)
