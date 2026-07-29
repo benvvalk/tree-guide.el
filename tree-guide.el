@@ -1178,6 +1178,7 @@ mode."
   (tree-guide--truncate-lines-init)
   (add-hook 'after-change-functions #'tree-guide--record-buffer-change nil t)
   (add-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown nil t)
+  (add-hook 'before-revert-hook #'tree-guide--mode-teardown nil t)
   ;; mark entire buffer dirty for initial guide creation
   (setq tree-guide--change-list (list (cons (point-min-marker) (point-max-marker))))
   (tree-guide--update-timer-rearm)
@@ -1193,6 +1194,7 @@ mode."
   (tree-guide--delete-all-overlays)
   (remove-hook 'after-change-functions #'tree-guide--record-buffer-change t)
   (remove-hook 'kill-buffer-hook #'tree-guide--update-timer-teardown t)
+  (remove-hook 'before-revert-hook #'tree-guide--mode-teardown t)
   (tree-guide--debug-log "mode disabled"))
 
 (define-minor-mode tree-guide-mode
