@@ -546,7 +546,7 @@ will simply return RANGE unchanged."
           (end2 (cdr range2)))
       (and (<= beg1 beg2) (>= end1 end2)))))
 
-(defun tree-guide--range-intersect (range1 range2 &optional allow-zero-width-p)
+(defun tree-guide--range-intersect (range1 range2 &optional allow-zero-width-flag)
   "Return the line range that is the intersection of line ranges RANGE1
 and RANGE2.
 
@@ -566,7 +566,7 @@ is '(4 . 5)."
       ;; If `max-beg' > `min-end', it means that `range1' and
       ;; `range2' do not intersect.
       (when (or (< max-beg min-end)
-                (and allow-zero-width-p (= max-beg min-end)))
+                (and allow-zero-width-flag (= max-beg min-end)))
         (cons max-beg min-end)))))
 
 (defun tree-guide--range-merge (range1 range2)
@@ -661,12 +661,12 @@ The intersections are returned as a sorted range list."
               (tree-guide--sorted-range-list-insert intersection result))))
     result))
 
-(defun tree-guide--sorted-range-lists-intersect (range-list1 range-list2 &optional allow-zero-width-p)
+(defun tree-guide--sorted-range-lists-intersect (range-list1 range-list2 &optional allow-zero-width-flag)
   "Return the intersection ranges of RANGE-LIST1 and RANGE-LIST2."
   (let (result)
     (dolist (range1 range-list1)
       (dolist (range2 range-list2)
-        (when-let (intersection (tree-guide--range-intersect range1 range2 allow-zero-width-p))
+        (when-let (intersection (tree-guide--range-intersect range1 range2 allow-zero-width-flag))
           (setq result
                 (tree-guide--sorted-range-list-insert intersection result)))))
     result))
