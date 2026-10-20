@@ -1206,3 +1206,5 @@ mode."
     (tree-guide--mode-teardown)))
 
 (provide 'tree-guide)
+
+;;; tree-guide.el ends here
