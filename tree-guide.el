@@ -1185,7 +1185,7 @@ mode."
   (tree-guide--debug-log "mode enabled"))
 
 (defun tree-guide--mode-teardown ()
-  "Perform necessary teardown when disabling tree-Guide mode."
+  "Perform necessary teardown when disabling Tree-Guide mode."
   (remove-from-invisibility-spec 'tree-guide)
   (tree-guide--indent-advice-teardown)
   (tree-guide--indent-command-hooks-teardown)
