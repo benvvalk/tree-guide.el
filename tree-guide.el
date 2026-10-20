@@ -1198,6 +1198,7 @@ mode."
   (remove-hook 'before-revert-hook #'tree-guide--mode-teardown t)
   (tree-guide--debug-log "mode disabled"))
 
+;;;###autoload
 (define-minor-mode tree-guide-mode
   "Display tree guides for elisp code."
   :lighter nil
