@@ -167,18 +167,18 @@ guides on line A."
       (while (not done)
         (let* ((parent-sexp-beg (nth 1 (syntax-ppss)))
                (last-child-flag (tree-guide--last-line-at-current-depth-p))
-               (parent-on-same-line-flag (when parent-sexp-beg
-                                           (save-excursion
-                                             ;; fast jump to beginning of line
-                                             (forward-line 0)
-                                             (<= (point) parent-sexp-beg))))
+               (child-on-same-line-flag (when parent-sexp-beg
+                                          (save-excursion
+                                            ;; fast jump to beginning of line
+                                            (forward-line 0)
+                                            (<= (point) parent-sexp-beg))))
                (parent-column (if parent-sexp-beg
                                   (save-excursion
                                     (goto-char parent-sexp-beg)
                                     (current-column))
                                 0))
                (guide-offset (- (current-column) parent-column)))
-          (push (list guide-offset parent-on-same-line-flag last-child-flag)
+          (push (list guide-offset child-on-same-line-flag last-child-flag)
                 guide-offsets-and-flags)
           ;; Set up for next `while' loop iteration, by moving point to
           ;; beginning of parent sexp. If there is no parent sexp,
@@ -200,16 +200,16 @@ the docstring for
       (let* ((rightmost-guide-flag (>= i (1- num-guides)))
              (guide-offset-and-flags (nth i guide-offsets-and-flags))
              (guide-offset (nth 0 guide-offset-and-flags))
-             (parent-on-same-line-flag (nth 1 guide-offset-and-flags))
-             (guide-type-last-flag (nth 2 guide-offset-and-flags))
+             (child-on-same-line-flag (nth 1 guide-offset-and-flags))
+             (last-child-flag (nth 2 guide-offset-and-flags))
              (guide-char (if rightmost-guide-flag
-                             (if guide-type-last-flag
+                             (if last-child-flag
                                  tree-guide--guide-char-with-handle-last
                                tree-guide--guide-char-with-handle)
-                           (if guide-type-last-flag
+                           (if last-child-flag
                                tree-guide--guide-char-space
                              tree-guide--guide-char-without-handle)))
-             (num-padding-chars (if parent-on-same-line-flag
+             (num-padding-chars (if child-on-same-line-flag
                                     (max (1- guide-offset) 0)
                                   (max
                                    (1- guide-offset)
