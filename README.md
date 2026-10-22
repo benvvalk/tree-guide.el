@@ -1,10 +1,12 @@
 > [!NOTE]
 >
-> `tree-guide.el` is _sponsorware_, which means that [my sponsors](https://github.com/sponsors/benvvalk) get early access to the next version of `tree-guide.el`, when it becomes available.
+> `tree-guide.el` is **sponsorware**, which means that [my sponsors](https://github.com/sponsors/benvvalk) get early access to the next version of `tree-guide.el`, via the private [tree-guide.el-next](https://github.com/benvvalk-sponsors-only/tree-guide.el-next) repo.
+>
+> **Current `tree-guide.el-next` status**: No new features/fixes available (identical to public version from [tree-guide.el](https://github.com/benvvalk/tree-guide.el.git) repo).
 >
 > My sponsors also get the ability to [vote on GitHub Issues](https://sponsoredissues.org/benvvalk).
 >
-> See [my GitHub Sponsors page](https://github.com/sponsors/benvvalk) for further details.
+> See [my GitHub Sponsors page](https://github.com/sponsors/benvvalk) for further details about sponsor perks.
 
 # Table of Contents
 
