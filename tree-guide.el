@@ -89,12 +89,60 @@ siblings."
         t))))
 
 (defun tree-guide--compute-guide-offsets-and-flags-for-current-line ()
-  "Compute the guide offsets and flags for the current line.
+  "Compute guide offsets and flags for the line containing point.
 
-The return value is a list of cons cells, where the CAR is the column
-position for a guide, and the CDR is the LAST-CHILD flag. The
-LAST-CHILD flag is non-nil when is ancestor sexp that owns the guide
-is the last child of its parent."
+The return value is a list, where each element has the form
+(GUIDE-OFFSET CHILD-ON-SAME-LINE-FLAG GUIDE-LAST-FLAG).
+
+GUIDE-OFFSET is total width of the guide character and any
+space/handle characters that follow it. For example, a GUIDE-OFFSET of
+4 would produce \"├───\" if the guide has a handle, or \"│ \" if the
+guide does not have a handle.
+
+CHILD-ON-SAME-LINE-FLAG is non-nil if next guide to the right,
+i.e. the first child of the current expression, also starts from the
+current line. This flag is a bit hard to understand, but it is needed
+to get the spacing between the guide characters right. (See below for
+a concrete example.)
+
+GUIDE-LAST-FLAG is non-nil if the guide is for the last child line of
+it's parent sexp. We need this flag because we use a different guide
+character for the last child line vs. the other child lines ('╰'
+vs. '│'/'├').
+
+To better understand the return value of this function, consider the
+following code example:
+
+(defun hello ()
+├─(let ((word1 \"hello\")
+│ │    ╰─(word2 \"world\")) ; <---------- line A
+│ ╰─(message \"%s %s\" word1 word2))
+╰─(message \"That's all folks!\"))
+
+When point is on line A, the return value of this function is:
+
+((0 nil t) (2 nil nil) (5 t nil) (1 nil t))
+
+First, the reader may wonder why the above list has 4 elements, while
+only 3 guides are rendered on line A.  This happens because the
+default value of `tree-guide-min-depth' is 1, and thus the first
+element of the list is skipped when rendering the guides.
+
+Second, consider the CHILD-ON-SAME-LINE-FLAG values for each guide,
+i.e. the second element of each inner list. The values are all nil
+except for the 3rd guide (i.e. the 2nd visible guide), which is the
+guide for the `let` expression. For this guide,
+CHILD-ON-SAME-LINE-FLAG is t because the first child expression of the
+`let', i.e. the list of `let' variable declarations, begins on the
+same line.
+
+Finally, consider the GUIDE-LAST-FLAG values for each guide, i.e. the
+third element of each inner list. The values all nil except for the
+last guide. The last guide has a GUIDE-LAST-FLAG value of t because
+\"(word2 \"world\")\" is the last child in the list of `let' variable
+declarations. This tells us that we need to use the `╰' guide
+character, instead of the `│' guide character that we used for the two
+guides on line A."
   (save-excursion
     ;; Note: I set `buffer-invisibility-spec' to nil here to work
     ;; around a strange intermittent bug, where `goto-char' sometimes
