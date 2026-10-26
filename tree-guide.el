@@ -928,43 +928,43 @@ were successfully updated without being interrupted by user input."
   ;; `(tree-guide--process-updates-while-no-input (current-buffer))'.
   (unless tree-guide-debug-p
     (let ((buffer (current-buffer))
-	  timer)
+	      timer)
       (setq timer
-	    (run-with-idle-timer
-	     0.05 ;; seconds after Emacs becomes idle
-	     t	  ;; repeat every time Emacs becomes idle
-	     ;; Note: We use a `lambda` for the timer callback here
-	     ;; because it allows us to cancel the timer even after
-	     ;; the buffer has been killed. (After the buffer has been
-	     ;; killed, we can no longer access
-	     ;; `tree-guide--update-timer`, because it is a
-	     ;; buffer-local variable.)
-	     ;;
-	     ;; Even though I use a `kill-buffer-hook` to
-	     ;; automatically cancel the timer (see
-	     ;; `tree-guide--mode-init`), I observed some problems
-	     ;; where timers would continue running even after their
-	     ;; owning buffer was killed, resulting in the following
-	     ;; repeated error message:
-	     ;;
-	     ;;   Error running timer
-	     ;;   ‘tree-guide--process-updates-while-no-input’: (error
-	     ;;   "Selecting deleted buffer") [134 times]
-	     ;;
-	     ;; I don't know why this was happening, but my hypothesis
-	     ;; is that Emacs is internally creates some temporary
-	     ;; `emacs-lisp-mode` buffers and does not call
-	     ;; `kill-buffer-hook` on them. So if I automatically
-	     ;; enable `tree-guide-mode` in all Elisp buffer via
-	     ;; `emacs-lisp-mode` (as I prefer to do), I end up with
-	     ;; some runaway timers.
-	     ;;
-	     ;; At any rate, this lambda wrapper should solve the
-	     ;; problem.
-	     (lambda ()
-	       (if (buffer-live-p buffer)
-		   (tree-guide--process-updates-while-no-input buffer)
-		 (cancel-timer timer)))))
+	        (run-with-idle-timer
+	         0.05 ;; seconds after Emacs becomes idle
+	         t	  ;; repeat every time Emacs becomes idle
+	         ;; Note: We use a `lambda` for the timer callback here
+	         ;; because it allows us to cancel the timer even after
+	         ;; the buffer has been killed. (After the buffer has been
+	         ;; killed, we can no longer access
+	         ;; `tree-guide--update-timer`, because it is a
+	         ;; buffer-local variable.)
+	         ;;
+	         ;; Even though I use a `kill-buffer-hook` to
+	         ;; automatically cancel the timer (see
+	         ;; `tree-guide--mode-init`), I observed some problems
+	         ;; where timers would continue running even after their
+	         ;; owning buffer was killed, resulting in the following
+	         ;; repeated error message:
+	         ;;
+	         ;;   Error running timer
+	         ;;   ‘tree-guide--process-updates-while-no-input’: (error
+	         ;;   "Selecting deleted buffer") [134 times]
+	         ;;
+	         ;; I don't know why this was happening, but my hypothesis
+	         ;; is that Emacs internally creates some temporary
+	         ;; `emacs-lisp-mode` buffers and does not call
+	         ;; `kill-buffer-hook` on them. So if I automatically
+	         ;; enable `tree-guide-mode` in all Elisp buffer via
+	         ;; `emacs-lisp-mode` (as I prefer to do), I end up with
+	         ;; some runaway timers.
+	         ;;
+	         ;; At any rate, this lambda wrapper should solve the
+	         ;; problem.
+	         (lambda ()
+	           (if (buffer-live-p buffer)
+                   (tree-guide--process-updates-while-no-input buffer)
+		         (cancel-timer timer)))))
       (setq-local tree-guide--update-timer timer))))
 
 (defun tree-guide--update-timer-teardown ()
@@ -1122,15 +1122,15 @@ confusion.")
   (when tree-guide-truncate-lines-p
     (visual-line-mode -1))
   (tree-guide--save-and-set-local-var 'truncate-lines
-				      tree-guide-truncate-lines-p)
+                                      tree-guide-truncate-lines-p)
   (tree-guide--save-and-set-local-var 'truncate-partial-width-windows
-				      tree-guide-truncate-lines-p))
+				                      tree-guide-truncate-lines-p))
 
 (defun tree-guide--truncate-lines-teardown ()
   "Tear down line-wrapping configuration for Tree-Guide."
   ;; Restore original state of `visual-line-mode`.
   (when (and (tree-guide--saved-local-var-p 'visual-line-mode)
-	     (tree-guide--saved-local-var-value 'visual-line-mode))
+	         (tree-guide--saved-local-var-value 'visual-line-mode))
     (visual-line-mode 1))
   (tree-guide--restore-local-var 'truncate-lines)
   (tree-guide--restore-local-var 'truncate-partial-width-windows))
