@@ -193,17 +193,17 @@ only 3 guides are rendered on line A.  This happens because the
 default value of `tree-guide-min-depth' is 1, and thus the guide for
 the top-level \"(defun ...)\" expression is not rendered by default.
 
-  Second, consider the CHILD-ON-SAME-LINE-FLAG values for each guide,
+Second, consider the CHILD-ON-SAME-LINE-FLAG values for each guide,
 i.e. the second element of each inner list. The values are all nil
-except for the 3rd guide (i.e. the 2nd visible guide), which is the
-guide for the `let` expression. CHILD-ON-SAME-LINE-FLAG is t in this
-case because the first child of the `let' expression, i.e. the list of
-`let' variable declarations, begins on the same line.
+except for the 3rd guide (the 2nd visible guide), which is the guide
+for the \"let\" expression. CHILD-ON-SAME-LINE-FLAG is t in this case
+because the first child of the \"let\" expression, i.e. the list of
+\"let\" variable declarations, begins on the same line.
 
-  Finally, consider the GUIDE-LAST-FLAG values for each guide, i.e. the
+Finally, consider the GUIDE-LAST-FLAG values for each guide, i.e. the
 third element of each inner list. The values are all nil except for
 the last guide. The last guide has a GUIDE-LAST-FLAG value of t
-because \"(word2 \"world\")\" is the last child in the list of `let'
+because \"(word2 \"world\")\" is the last child in the list of \"let\"
 variable declarations. This tells us that we need to use the `╰' guide
 character, instead of the `│' guide character that we used for the
 first two guides on line A."
