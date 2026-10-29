@@ -1156,12 +1156,11 @@ indentation-sensitive commands."
 ;; we disable it by default.
 
 (defcustom tree-guide-truncate-lines-p t
-  "If non-nil, line-wrapping will be turned off while `tree-guide-mode'
-is enabled.
+  "If non-nil, disable line wrapping while `tree-guide-mode' is enabled.
 
-The default value of this variable is t, because using line-wrapping
-in combination with `tree-guide-mode' tends to create visual noise and
-confusion.")
+The default value of this variable is t, because line wrapping does
+not work well in combination with `tree-guide-mode'. It creates visual
+noise and confusion.")
 
 (defun tree-guide--truncate-lines-init ()
   "Set up line-wrapping configuration for Tree-Guide."
