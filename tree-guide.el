@@ -50,9 +50,11 @@
 ;;   ╰─(t (+ (fib (- i 1))
 ;;        ╰──(fib (- i 2))))))
 
+;;; Code:
+
 (require 'easy-mmode) ;; for `define-minor-mode'
 
-;;; Guide rendering
+;;;; Guide rendering
 ;;
 ;; For each logical line in the buffer, create a guide overlay.
 
@@ -627,7 +629,7 @@ quickly as possible."
   (remove-overlays nil nil 'category 'tree-guide)
   (remove-overlays nil nil 'category 'tree-guide-indentation))
 
-;;; Operations on line/character ranges
+;;;; Operations on line/character ranges
 ;; (used by live update algorithm below)
 
 (defun tree-guide--make-marker-range (beg end)
@@ -814,7 +816,7 @@ If there is no range in RANGE-LIST that contains RANGE, return nil."
         (throw 'done current-range)))
     nil))
 
-;;; Live update algorithm
+;;;; Live update algorithm
 ;;
 ;; When the user edits the buffer, we need to quickly update the
 ;; indentation/guide overlays to match the new buffer contents.
@@ -1046,7 +1048,7 @@ This function is invoked by `after-change-functions'."
   ;; [1]: https://emacs.stackexchange.com/a/71615
   (tree-guide--update-timer-rearm))
 
-;;; Integration with indentation functions
+;;;; Integration with indentation functions
 ;;
 ;; This mode hides the leading indentation whitespace on each line, so
 ;; that it can show the guides instead. However, some
@@ -1150,7 +1152,7 @@ indentation-sensitive commands."
   (remove-hook 'pre-command-hook #'tree-guide--indent-pre-command-hook t)
   (remove-hook 'post-command-hook #'tree-guide--indent-post-command-hook t))
 
-;;; Line wrapping
+;;;; Line wrapping
 ;; Line wrapping generally shouldn't be used in combination with
 ;; `tree-guide-mode', because it creates visual noise/confusion. So
 ;; we disable it by default.
@@ -1184,7 +1186,7 @@ noise and confusion.")
   (tree-guide--restore-local-var 'truncate-lines)
   (tree-guide--restore-local-var 'truncate-partial-width-windows))
 
-;;; Copy lines with guides intact
+;;;; Copy lines with guides intact
 ;; Copy text to the kill ring with the tree guide characters intact.
 ;; Emacs' default behaviour with `kill-region` etc. is to copy the raw
 ;; buffer text without the guides (i.e. without overlays). However
@@ -1259,7 +1261,7 @@ the lisp source code.")
                 args))
         (insert "\n")))))
 
-;;; Saving/restoring buffer-local variables
+;;;; Saving/restoring buffer-local variables
 ;; Used during mode init/teardown.
 
 (defvar-local tree-guide--saved-local-vars nil
@@ -1307,7 +1309,7 @@ value of VAR to VALUE."
 	      (set (make-local-variable var) value)
 	    (kill-local-variable var)))))
 
-;;; Minor mode init/teardown
+;;;; Minor mode init/teardown
 
 (defun tree-guide--mode-init ()
   "Initialize Tree-Guide mode."
