@@ -157,7 +157,7 @@ siblings."
   "Compute guide offsets and flags for the line containing point.
 
 The return value is a list, where each element has the form
-(GUIDE-OFFSET CHILD-ON-SAME-LINE-FLAG GUIDE-LAST-FLAG).
+\(GUIDE-OFFSET CHILD-ON-SAME-LINE-FLAG GUIDE-LAST-FLAG).
 
 GUIDE-OFFSET is total width of the guide character and any
 space/handle characters that follow it. For example, a GUIDE-OFFSET of
@@ -178,7 +178,7 @@ vs. '│'/'├').
 To better understand the return value of this function, consider the
 following code example:
 
-(defun hello ()
+\(defun hello ()
 ├─(let ((word1 \"hello\")
 │ │    ╰─(word2 \"world\")) ; <---------- line A
 │ ╰─(message \"%s %s\" word1 word2))
@@ -186,7 +186,7 @@ following code example:
 
 When point is on line A, the return value of this function is:
 
-((0 nil t) (2 nil nil) (5 t nil) (1 nil t))
+\((0 nil t) (2 nil nil) (5 t nil) (1 nil t))
 
 First, the reader may wonder why the above list has 4 elements, while
 only 3 guides are rendered on line A.  This happens because the
@@ -261,7 +261,7 @@ rendered at the beginning of a line.
 For example, in the following `defun', the guide string for line A is
  \"│ │   ╰─\":
 
-(defun hello ()
+\(defun hello ()
 ├─(let ((word1 \"hello\")
 │ │    ╰─(word2 \"world\")) ; <---------- line A
 │ ╰─(message \"%s %s\" word1 word2))
@@ -456,7 +456,7 @@ beginning of the buffer requires updating the indentation and guide
 overlays on every (logical) line of the buffer!
 
 The return value of this function is a cons cell of the form
-(INTERRUPTED-P . RESUME-RANGES), where INTERRUPTED-P is non-nil if
+\(INTERRUPTED-P . RESUME-RANGES), where INTERRUPTED-P is non-nil if
 updates were interrupted by user input, and RESUME-RANGES is a list of
 CHANGE-REGION values that can be passed back into this function (one
 by one) to complete the updates.  The use of RESUME-RANGES ensures
@@ -1075,7 +1075,7 @@ this regexp list, by setting `buffer-invisibility-spec' to nil.")
 
 (defun tree-guide--indent-advice (orig-fn &rest args)
   "Advice for Emacs' built-in indent functions
-(e.g. `indent-line-function', `indent-region-function'), that temporarily
+\(e.g. `indent-line-function', `indent-region-function'), that temporarily
 unhides indentation whitespace on all lines.
 
 Normally we hide the indentation whitespace and show the tree guides
