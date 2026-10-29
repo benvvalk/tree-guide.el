@@ -1194,23 +1194,23 @@ noise and confusion.")
 (defun tree-guide--current-line-with-guides ()
   "Copy the current line, with guide characters intact."
   (let* ((line-beg (save-excursion (forward-line 0) (point)))
-	 (line-end (save-excursion (forward-line 1) (point)))
-	 (indent-column (let ((tab-width 1)
-			      buffer-invisibility-spec)
-			  (current-indentation)))
-	 (indent-beg (+ line-beg indent-column))
-	 (guide-overlay (seq-find
-			 (lambda (overlay)
-			   (eq (overlay-get overlay 'category)
-			       'tree-guide))
-			 (overlays-in line-beg line-end)))
-	 (guide-string (when guide-overlay
-			 (substring-no-properties
-			  (overlay-get guide-overlay 'line-prefix)))))
+	     (line-end (save-excursion (forward-line 1) (point)))
+	     (indent-column (let ((tab-width 1)
+			                  buffer-invisibility-spec)
+			              (current-indentation)))
+	     (indent-beg (+ line-beg indent-column))
+	     (guide-overlay (seq-find
+			             (lambda (overlay)
+			               (eq (overlay-get overlay 'category)
+			                   'tree-guide))
+			             (overlays-in line-beg line-end)))
+	     (guide-string (when guide-overlay
+			             (substring-no-properties
+			              (overlay-get guide-overlay 'line-prefix)))))
     (concat guide-string
-	    (buffer-substring-no-properties
-	     indent-beg
-	     line-end))))
+	        (buffer-substring-no-properties
+	         indent-beg
+	         line-end))))
 
 (defun tree-guide--copy-lines-with-guides (beg end)
   "Copy text lines overlapping region, with guide characters intact.
@@ -1230,11 +1230,11 @@ If no region is selected, copy the line containing point."
     (save-excursion
       (goto-char beg)
       (while (<= (point) end)
-	(push (tree-guide--current-line-with-guides) lines)
-	(forward-line 1)))
+	    (push (tree-guide--current-line-with-guides) lines)
+	    (forward-line 1)))
     (kill-new (mapconcat #'identity (nreverse lines)))))
 
-;;; Debugging
+;;;; Debugging
 
 (defcustom tree-guide-debug-p nil
   "If non-nil, print debug messages to a dedicated log buffer.
@@ -1301,11 +1301,11 @@ value of VAR to VALUE."
   "Restore VAR to its previous buffer-local or global value."
   (when-let ((record (assoc var tree-guide--saved-local-vars)))
     (let ((var (nth 0 record))
-	  (was-local-p (nth 1 record))
-	  (value (nth 2 record)))
+	      (was-local-p (nth 1 record))
+	      (value (nth 2 record)))
       (if was-local-p
-	  (set (make-local-variable var) value)
-	(kill-local-variable var)))))
+	      (set (make-local-variable var) value)
+	    (kill-local-variable var)))))
 
 ;;; Minor mode init/teardown
 
