@@ -161,7 +161,7 @@ The return value is a list, where each element has the form
 
 GUIDE-OFFSET is total width of the guide character and any
 space/handle characters that follow it. For example, a GUIDE-OFFSET of
-4 would produce \"├───\" if the guide has a handle, or \"│ \" if the
+4 would produce \"├───\" if the guide has a handle, or \"│   \" if the
 guide does not have a handle.
 
 CHILD-ON-SAME-LINE-FLAG is non-nil if next guide to the right,
