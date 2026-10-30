@@ -26,7 +26,7 @@
 ;;; Commentary:
 
 ;; `tree-guide-mode' is a local minor mode that adds visual guides to
-;; lisp source code buffers. The guides update in real time as you
+;; Lisp source code buffers.  The guides update in real time as you
 ;; edit.
 ;;
 ;; Below is an example of what the guides look like, for a simple
@@ -73,8 +73,8 @@ Top-level sexps have depth 0, children of top-level sexps have depth
 (defvar tree-guide--guide-char-with-handle "├"
   "The character for a guide with a handle.
 
-This character is not used for the last line of an expression. In that
-case, `tree-guide--guide-with-handle-last' is used instead.")
+This character is not used for the last line of an expression.  In
+that case, `tree-guide--guide-with-handle-last' is used instead.")
 
 (defvar tree-guide--guide-char-with-handle-last "╰"
   "The guide character for the last line of an expression.
@@ -130,8 +130,7 @@ position (i.e. the value returned by `point-max')."
         (scan-error (point-max))))))
 
 (defun tree-guide--last-line-at-current-depth-p ()
-  "Return non-nil if there is no next sibling sexp, string, comment,
-or blank line following point.
+  "Return non-nil if there is no next sibling line.
 
 Point should be positioned before the sexp that you want to test.
 Note that this function can return different values for different
@@ -162,18 +161,18 @@ The return value is a list, where each element has the form
 \(GUIDE-OFFSET CHILD-ON-SAME-LINE-FLAG GUIDE-LAST-FLAG).
 
 GUIDE-OFFSET is total width of the guide character and any
-space/handle characters that follow it. For example, a GUIDE-OFFSET of
+space/handle characters that follow it.  For example, a GUIDE-OFFSET of
 4 would produce \"├───\" if the guide has a handle, or \"│   \" if the
 guide does not have a handle.
 
 CHILD-ON-SAME-LINE-FLAG is non-nil if next guide to the right,
 i.e. the first child of the current expression, also starts from the
-current line. This flag is a bit hard to understand, but it is needed
-to get the spacing between the guide characters right. (See below for
+current line.  This flag is a bit hard to understand, but it is needed
+to get the spacing between the guide characters right.  (See below for
 a concrete example.)
 
 GUIDE-LAST-FLAG is non-nil if the guide is for the last child line of
-it's parent sexp. We need this flag because we use a different guide
+it's parent sexp.  We need this flag because we use a different guide
 character for the last child line vs. the other child lines ('╰'
 vs. '│'/'├').
 
@@ -196,15 +195,15 @@ default value of `tree-guide-min-depth' is 1, and thus the guide for
 the top-level \"(defun ...)\" expression is not rendered by default.
 
 Second, consider the CHILD-ON-SAME-LINE-FLAG values for each guide,
-i.e. the second element of each inner list. The values are all nil
+i.e. the second element of each inner list.  The values are all nil
 except for the 3rd guide (the 2nd visible guide), which is the guide
-for the \"let\" expression. CHILD-ON-SAME-LINE-FLAG is t in this case
+for the \"let\" expression.  CHILD-ON-SAME-LINE-FLAG is t in this case
 because the first child of the \"let\" expression, i.e. the list of
 \"let\" variable declarations, begins on the same line.
 
 Finally, consider the GUIDE-LAST-FLAG values for each guide, i.e. the
-third element of each inner list. The values are all nil except for
-the last guide. The last guide has a GUIDE-LAST-FLAG value of t
+third element of each inner list.  The values are all nil except for
+the last guide.  The last guide has a GUIDE-LAST-FLAG value of t
 because \"(word2 \"world\")\" is the last child in the list of \"let\"
 variable declarations. This tells us that we need to use the `╰' guide
 character, instead of the `│' guide character that we used for the
@@ -311,14 +310,14 @@ docstring for that function."
 
 The purpose of the indentation overlays is to hide the leading
 whitespace on each line, so that we can show the tree guides
-instead. The indentation overlays need to be updated whenever lines
+instead.  The indentation overlays need to be updated whenever lines
 are re-indented, and whenever new lines are inserted in the buffer.
 
 This function returns non-nil if it makes any changes related to the
 indentation overlay on the current line, such as creating a missing
 indentation overlay, updating the start/end positions of an existing
 overlay, or deleting duplicate/extraneous overlays that should no
-longer exist. (Extraneous overlays can be introduced by the user's
+longer exist.  (Extraneous overlays can be introduced by the user's
 buffer-editing activity, such as inserting a newline that splits an
 existing line, or deleting the whitespace at the beginning of a line.)
 
@@ -375,7 +374,7 @@ extraneous overlays that needed to be removed."
 
 The guide overlays display virtual tree guide characters at the
 beginning of each line, which show the parent/child relationships
-between sexps in the buffer. The guide overlays need to be updated
+between sexps in the buffer.  The guide overlays need to be updated
 when the parent/child relationships between sexps change, and when new
 lines are inserted in the buffer.
 
@@ -383,7 +382,7 @@ This function returns non-nil if it makes any changes related to the
 guide overlay for the current line, such as: creating a missing guide
 overlay, updating the guide characters displayed by an existing
 overlay, or deleting duplicate/extranedeous overlays that should no
-longer exist. (Extraneous overlays can be introduced by the user's
+longer exist.  (Extraneous overlays can be introduced by the user's
 buffer-editing activity, such as inserting a newline that splits an
 existing line, or deleting the whitespace at the beginning of a line.)
 
@@ -451,9 +450,9 @@ CHANGE-REGION is a cons cell of the form (BEG . END), which describes
 the buffer range where the text content has changed.
 
 This function halts its work as soon as any user input occurs, such as
-pressing a key. This is important to keep Emacs responsive, because
+pressing a key.  This is important to keep Emacs responsive, because
 some types of buffer edits can require updating a large number of
-lines. For example, inserting an unbalanced open paren (`(') at the
+lines.  For example, inserting an unbalanced open paren (`(') at the
 beginning of the buffer requires updating the indentation and guide
 overlays on every (logical) line of the buffer!
 
@@ -473,7 +472,7 @@ overlays are identical to the existing overlays.
 However, if the optional argument UPDATE-BOUNDS is provided, only
 logical lines that overlap UPDATE-BOUNDS will be updated, and any
 buffer ranges outside of of those lines will be returned as items in
-RESUME-RANGES. The main purpose of UPDATE-BOUNDS is to restrict
+RESUME-RANGES.  The main purpose of UPDATE-BOUNDS is to restrict
 updates to on-screen lines, so that on-screen updates happen as
 quickly as possible."
   ;; Extend CHANGE-REGION and UPDATE-BOUNDS to include the entirety of
@@ -638,7 +637,7 @@ quickly as possible."
 A marker range is a cons cell of the form (BEG . END), where both BEG
 and END are markers.
 
- Both BEG and END may be provided as either a number or a marker. In
+ Both BEG and END may be provided as either a number or a marker.  In
 the case that BEG/END is a marker, it will used as-is in the returned
 range (a new marker will not be created)."
   (let* ((marker-beg (if (markerp beg)
@@ -672,11 +671,10 @@ will simply return RANGE unchanged."
       (and (<= beg1 beg2) (>= end1 end2)))))
 
 (defun tree-guide--range-intersect (range1 range2 &optional allow-zero-width-flag)
-  "Return the line range that is the intersection of line ranges RANGE1
-and RANGE2.
+  "Return the intersection of RANGE1 and RANGE2.
 
  The returned value is a cons cell, where the CAR is the starting line
-number and the CDR is the end line number (inclusive). If the ranges
+number and the CDR is the end line number (inclusive).  If the ranges
 don't intersect, the return value will be nil.
 
 Example: If RANGE1 is '(1 . 5) and RANGE2 is '(4 . 9), then the result
@@ -714,13 +712,12 @@ adjacent."
       (cons (min beg1 beg2) (max end1 end2)))))
 
 (defun tree-guide--sorted-range-list-insert (range range-list)
-  "Insert RANGE into the sorted range list RANGE-LIST, and
-return the new sorted range list.
+  "Return a new list with RANGE inserted into RANGE-LIST.
 
-If RANGE overlaps existing ranges in RANGE-LIST, it will be
-merged with those ranges.
+RANGE-LIST must be a sorted range list, and the return value is also a
+sorted range list.
 
-Note: This function modifies the original list RANGE-LIST. In other
+Note: This function operates destructively on RANGE-LIST.  In other
 words, the returned list reuses cons cells from RANGE-LIST."
   (let ((merged-range range)
         result)
@@ -754,10 +751,12 @@ words, the returned list reuses cons cells from RANGE-LIST."
     (nreverse result)))
 
 (defun tree-guide--sorted-range-list-subtract (range range-list)
-  "Subtract RANGE from the sorted range list RANGE-LIST, and return
-the new sorted range list.
+  "Subtract RANGE from RANGE-LIST and return the result.
 
-Note: This function modifies the original list RANGE-LIST. In other
+RANGE-LIST must be a sorted range list, and the return value is also a
+sorted range list.
+
+Note: This function operates destructively on RANGE-LIST.  In other
 words, the returned list reuses cons cells from RANGE-LIST."
   (let ((beg (car range))
         (end (cdr range))
@@ -852,13 +851,13 @@ been successively updated, it is removed from this list.")
   "Idle timer that updates the guides, after the user edits the buffer.")
 
 (defun tree-guide--on-screen-range-list (buffer)
-  "Return the list of buffer ranges that are currently on-screen.
+  "Return the ranges of BUFFER that are currently visible to the user.
 
-  \"On-screen\" buffer ranges are character ranges that are
-currently visible to the user in one or more Emacs windows.
+A range is \"visible to the user\" if its characters are being
+displayed in one or more Emacs windows.
 
 The return value is a sorted range list."
-  (let (on-screen-range-list
+      (let (on-screen-range-list
         (window-list (get-buffer-window-list buffer)))
     (dolist (window window-list)
       (setq on-screen-range-list
@@ -1026,7 +1025,13 @@ were successfully updated without being interrupted by user input."
     (setq tree-guide--update-timer nil)))
 
 (defun tree-guide--record-buffer-change (beg end before-length)
-  "Record that a buffer change occurred between BEG and END.
+  "Record that a buffer edit occurred between BEG and END.
+
+We record the edited buffer range so that we can later update the
+guides in that range (and possibly beyond), via an idle timer.
+
+BEFORE-LENGTH is the number of characters that previously existed
+between BEG and END, before the buffer edit occurred.
 
 This function is invoked by `after-change-functions'."
   (tree-guide--debug-log "record-buffer-change: (beg=%s, end=%s, before-length=%s)" beg end before-length)
@@ -1063,11 +1068,10 @@ This function is invoked by `after-change-functions'."
 
 (defcustom tree-guide-regexps-for-commands-that-require-visible-indentation
   '("lispy")
-  "A list of regexps for commands that require indentation whitespace
-to be visible, in order to function correctly.
+  "Regexps for commands that require indentation whitespace to be visible.
 
 Normally, all indentation whitespace is hidden, and the guides are
-shown instead. However, some commands don't function correctly when
+shown instead.  However, some commands don't function correctly when
 indentation whitespace is hidden, most notably Emacs' built-in
 indentation functions (`indent-line-function' and
 `indent-region-function').
@@ -1076,12 +1080,17 @@ Indentation whitespace is temporarily unhidden for commands that match
 this regexp list, by setting `buffer-invisibility-spec' to nil.")
 
 (defun tree-guide--indent-advice (orig-fn &rest args)
-  "Advice for Emacs' built-in indent functions
+  "Advice for Emacs' built-in indent functions.
+
+ORIG-FN is the original function that is being advised.  Usually,
+ORIG-FN will be `indent-line-function' or `indent-region-function'.
+
+ARGS are the arguments that ORIG-FUN was
 \(e.g. `indent-line-function', `indent-region-function'), that temporarily
 unhides indentation whitespace on all lines.
 
 Normally we hide the indentation whitespace and show the tree guides
-instead. However, Emacs' built-in indent functions don't calculate the
+instead.  However, Emacs' built-in indent functions don't calculate the
 correct column values unless they can 'see' the indentation whitespace
 on the previous line.
 
@@ -1091,8 +1100,7 @@ invisible text, by setting `buffer-invisibility-spec' to nil."
     (apply orig-fn args)))
 
 (defun tree-guide--indent-advice-init ()
-  "Add advice to Emacs' built-in line/region indentation functions, so
-that they work correctly in Tree-Guide mode.
+  "Add advice to Emacs' built-in indentation functions.
 
 See the docstring for `tree-guide--indent-advice' for further
 explanation."
@@ -1100,8 +1108,7 @@ explanation."
   (advice-add indent-region-function :around #'tree-guide--indent-advice))
 
 (defun tree-guide--indent-advice-teardown ()
-  "Remove advice from Emacs' built-in line/region indentation
-functions.
+  "Remove advice from Emacs' built-in indentation functions.
 
 See the docstring for `tree-guide--indent-advice' for further
 explanation."
@@ -1109,8 +1116,7 @@ explanation."
   (advice-remove indent-region-function #'tree-guide--indent-advice))
 
 (defun tree-guide--indent-pre-command-hook ()
-  "Temporarily hide indentation whitespace, for indentation-sensitive
-commands."
+  "Temporarily unhide indentation whitespace, for indentation-sensitive commands."
   (let ((command-name (symbol-name this-command)))
     (when (seq-find
            (lambda (regexp)
@@ -1119,8 +1125,7 @@ commands."
       (remove-from-invisibility-spec 'tree-guide))))
 
 (defun tree-guide--indent-post-command-hook ()
-  "Rehide indentation whitespace, after temporarily unhiding it for
-indentation-sensitive commands."
+  "Rehide indentation whitespace, after completing indentation-sensitive commands."
   (add-to-invisibility-spec 'tree-guide)
   ;; If point is inside invisible text, move point to the first visible
   ;; character on the line.
@@ -1161,7 +1166,7 @@ indentation-sensitive commands."
   "If non-nil, disable line wrapping while `tree-guide-mode' is enabled.
 
 The default value of this variable is t, because line wrapping does
-not work well in combination with `tree-guide-mode'. It creates visual
+not work well in combination with `tree-guide-mode'.  It creates visual
 noise and confusion.")
 
 (defun tree-guide--truncate-lines-init ()
@@ -1215,7 +1220,7 @@ noise and confusion.")
 	         line-end))))
 
 (defun tree-guide--copy-lines-with-guides (beg end)
-  "Copy text lines overlapping region, with guide characters intact.
+  "Copy lines that overlap the range (BEG, END), with guide characters intact.
 
 If no region is selected, copy the line containing point."
   (interactive
@@ -1246,7 +1251,9 @@ SOURCE-BUFFER*\", where SOURCE-BUFFER is the target buffer containing
 the lisp source code.")
 
 (defun tree-guide--debug-log (format-string &rest args)
-  "Append a message to the Tree-Guide debug buffer."
+  "Append a message to the Tree-Guide debug buffer.
+
+ The meaning of FORMAT-STRING and ARGS is the same as for `message'."
   (when tree-guide-debug-p
     (let* ((source-buffer (current-buffer)))
       (with-current-buffer (get-buffer-create
@@ -1265,13 +1272,25 @@ the lisp source code.")
 ;; Used during mode init/teardown.
 
 (defvar-local tree-guide--saved-local-vars nil
-  "A list of buffer-local variable values that were overwritten when
-enabling Tree-Guide mode.
+  "A list of variable values that were modified by Tree-Guide mode.
 
-We use this list to restore the user's original settings when
-disabling Tree-Guide mode. For example, Tree-Guide mode disables
-line-wrapping and `visual-line-mode' by default, but restores those
-settings when Tree-Guide mode is disabled.")
+This value of this variable is a list that contains elements of the
+form (VAR LOCAL-VARIABLE-FLAG VALUE), where:
+
+  - VAR -- The Lisp symbol for the variable.
+
+ - LOCAL-VARIABLE-FLAG -- The result of calling `local-variable-p' on
+the target variable, before modification.  It is non-nil if the
+variable had a buffer-local binding before being modified by
+Tree-Guide mode.
+
+- VALUE -- The previous global or buffer-local value of the variable,
+before it was modified by Tree-Guide mode.
+
+We use this list to restore the user's original buffer-local variable
+values when disabling Tree-Guide mode.  For example, Tree-Guide mode
+disables `visual-line-mode' by default, but restores those settings
+when Tree-Guide mode is disabled.")
 
 (defun tree-guide--saved-local-var-p (var)
   "Return non-nil if we've saved a buffer-local value for VAR."
@@ -1280,7 +1299,7 @@ settings when Tree-Guide mode is disabled.")
 (defun tree-guide--saved-local-var-value (var)
   "Return the saved buffer-local value for VAR.
 
-If there is no saved buffer-local value for VAR, return nil. To
+If there is no saved buffer-local value for VAR, return nil.  To
 distinguish between a value of nil and the absence of a saved value,
 use `tree-guide--saved-local-var-p'."
   (when-let ((record (assoc var tree-guide--saved-local-vars)))
@@ -1294,8 +1313,7 @@ use `tree-guide--saved-local-var-p'."
 	tree-guide--saved-local-vars))
 
 (defun tree-guide--save-and-set-local-var (var value)
-  "Save the current buffer-local value of VAR (if any), then set the
-value of VAR to VALUE."
+  "Save the current value of VAR, then set VAR to VALUE."
   (tree-guide--save-local-var var)
   (set (make-local-variable var) value))
 
@@ -1341,7 +1359,7 @@ value of VAR to VALUE."
 
 ;;;###autoload
 (define-minor-mode tree-guide-mode
-  "Display tree guides for lisp code."
+  "Display visual guides in Lisp source code buffers."
   :lighter nil
   (if tree-guide-mode
       (tree-guide--mode-init)
