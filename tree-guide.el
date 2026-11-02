@@ -59,16 +59,22 @@
 ;; For each logical line in the buffer, create a guide overlay.
 
 (defcustom tree-guide-min-handle-width 1
-  "Minimum width of guide handle, in characters.")
+  "Minimum width of guide handle, in characters."
+  :type 'natnum
+  :group 'tree-guide)
 
 (defcustom tree-guide-min-depth 1
   "The minimum depth for which to render guides.
 
 Top-level sexps have depth 0, children of top-level sexps have depth
-1, and so on.")
+1, and so on."
+  :type 'natnum
+  :group 'tree-guide)
 
 (defcustom tree-guide-face 'shadow
-  "The face used to render the tree guide characters.")
+  "The face used to render the tree guide characters."
+  :type 'face
+  :group 'tree-guide)
 
 (defvar tree-guide--guide-char-with-handle "├"
   "The character for a guide with a handle.
@@ -677,11 +683,11 @@ will simply return RANGE unchanged."
 number and the CDR is the end line number (inclusive).  If the ranges
 don't intersect, the return value will be nil.
 
-Example: If RANGE1 is '(1 . 5) and RANGE2 is '(4 . 9), then the result
-is '(4 . 5).
+Example: If RANGE1 is \='(1 . 5) and RANGE2 is \='(4 . 9), then the
+result is \='(4 . 5).
 
 If ALLOW-ZERO-WIDTH-FLAG is non-nil, then this function is allowed to
-return a zero-width range, e.g. '(3 . 3).  Otherwise, this function
+return a zero-width range, e.g. \='(3 . 3).  Otherwise, this function
 will return nil instead of a zero-width range."
   (when (and range1 range2)
     (let* ((beg1 (car range1))
@@ -795,7 +801,7 @@ The intersections are returned as a sorted range list."
 The intersections are returned as a sorted range list.
 
 If ALLOW-ZERO-WIDTH-FLAG is non-nil, then result is allowed to contain
-zero-width ranges, e.g. '(3 . 3).  Otherwise, zero-width ranges will
+zero-width ranges, e.g. \='(3 . 3).  Otherwise, zero-width ranges will
 be omitted."
   (let (result)
     (dolist (range1 range-list1)
@@ -1077,10 +1083,12 @@ indentation functions (`indent-line-function' and
 `indent-region-function').
 
 Indentation whitespace is temporarily unhidden for commands that match
-this regexp list, by setting `buffer-invisibility-spec' to nil.")
+this regexp list, by setting `buffer-invisibility-spec' to nil."
+  :type '(repeat regexp)
+  :group 'tree-guide)
 
 (defun tree-guide--indent-advice (orig-fn &rest args)
-  "Advice for Emacs' built-in indent functions.
+  "Advice for Emacs\=' built-in indent functions.
 
 ORIG-FN is the original function that is being advised.  Usually,
 ORIG-FN will be `indent-line-function' or `indent-region-function'.
@@ -1090,9 +1098,9 @@ ARGS are the arguments that ORIG-FUN was
 unhides indentation whitespace on all lines.
 
 Normally we hide the indentation whitespace and show the tree guides
-instead.  However, Emacs' built-in indent functions don't calculate the
-correct column values unless they can 'see' the indentation whitespace
-on the previous line.
+instead.  However, Emacs' built-in indent functions don't calculate
+the correct column values unless they can \"see\" the indentation
+whitespace on the previous line.
 
 To work around this, we add an advice that temporarily unhides all
 invisible text, by setting `buffer-invisibility-spec' to nil."
@@ -1167,7 +1175,9 @@ explanation."
 
 The default value of this variable is t, because line wrapping does
 not work well in combination with `tree-guide-mode'.  It creates visual
-noise and confusion.")
+noise and confusion."
+  :type 'boolean
+  :group 'tree-guide)
 
 (defun tree-guide--truncate-lines-init ()
   "Set up line-wrapping configuration for Tree-Guide."
@@ -1248,7 +1258,9 @@ If no region is selected, copy the line containing point."
 
 The name of the log buffer has the form \"*tree-guide-debug:
 SOURCE-BUFFER*\", where SOURCE-BUFFER is the target buffer containing
-the lisp source code.")
+the lisp source code."
+  :type 'boolean
+  :group 'tree-guide)
 
 (defun tree-guide--debug-log (format-string &rest args)
   "Append a message to the Tree-Guide debug buffer.
