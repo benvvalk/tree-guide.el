@@ -668,7 +668,7 @@ will simply return RANGE unchanged."
      (cdr range))))
 
 (defun tree-guide--range-contains-p (range1 range2)
-  "Return non-nil if RANGE1 contains RANGE2."
+  "Return non-nil if RANGE1 spans RANGE2."
   (when (and range1 range2)
     (let ((beg1 (car range1))
           (beg2 (car range2))
@@ -812,7 +812,7 @@ be omitted."
     result))
 
 (defun tree-guide--sorted-range-list-find-containing (range range-list)
-  "Return the first range in RANGE-LIST that contains RANGE.
+  "Return the first range in RANGE-LIST that spans RANGE, if any.
 
 If there is no range in RANGE-LIST that contains RANGE, return nil."
   (catch 'done
