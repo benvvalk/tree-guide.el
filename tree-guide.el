@@ -1170,7 +1170,7 @@ explanation."
 ;; `tree-guide-mode', because it creates visual noise/confusion. So
 ;; we disable it by default.
 
-(defcustom tree-guide-truncate-lines-flag t
+(defcustom tree-guide-disable-line-wrapping-flag t
   "Non-nil means disable line wrapping while `tree-guide-mode' is enabled.
 
 The default value of this variable is t, because line wrapping does
@@ -1185,12 +1185,12 @@ noise and confusion."
   ;; Note: `visual-line-mode` forces line-wrapping regardless of the
   ;; values of `truncate-lines` / `truncate-partial-width-windows`, so
   ;; we need to turn it off.
-  (when tree-guide-truncate-lines-flag
+  (when tree-guide-disable-line-wrapping-flag
     (visual-line-mode -1))
   (tree-guide--save-and-set-local-var 'truncate-lines
-                                      tree-guide-truncate-lines-flag)
+                                      tree-guide-disable-line-wrapping-flag)
   (tree-guide--save-and-set-local-var 'truncate-partial-width-windows
-				                      tree-guide-truncate-lines-flag))
+				                      tree-guide-disable-line-wrapping-flag))
 
 (defun tree-guide--truncate-lines-teardown ()
   "Tear down line-wrapping configuration for Tree-Guide."
