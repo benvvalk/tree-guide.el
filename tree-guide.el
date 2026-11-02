@@ -983,7 +983,7 @@ were successfully updated without being interrupted by user input."
   ;; large amount of log output that makes it difficult to debug.
   ;; Instead, I trigger guide updates manually by evaluating
   ;; `(tree-guide--process-updates-while-no-input (current-buffer))'.
-  (unless tree-guide-debug-p
+  (unless tree-guide-debug-flag
     (let ((buffer (current-buffer))
 	      timer)
       (setq timer
@@ -1170,8 +1170,8 @@ explanation."
 ;; `tree-guide-mode', because it creates visual noise/confusion. So
 ;; we disable it by default.
 
-(defcustom tree-guide-truncate-lines-p t
-  "If non-nil, disable line wrapping while `tree-guide-mode' is enabled.
+(defcustom tree-guide-truncate-lines-flag t
+  "Non-nil means disable line wrapping while `tree-guide-mode' is enabled.
 
 The default value of this variable is t, because line wrapping does
 not work well in combination with `tree-guide-mode'.  It creates visual
@@ -1185,12 +1185,12 @@ noise and confusion."
   ;; Note: `visual-line-mode` forces line-wrapping regardless of the
   ;; values of `truncate-lines` / `truncate-partial-width-windows`, so
   ;; we need to turn it off.
-  (when tree-guide-truncate-lines-p
+  (when tree-guide-truncate-lines-flag
     (visual-line-mode -1))
   (tree-guide--save-and-set-local-var 'truncate-lines
-                                      tree-guide-truncate-lines-p)
+                                      tree-guide-truncate-lines-flag)
   (tree-guide--save-and-set-local-var 'truncate-partial-width-windows
-				                      tree-guide-truncate-lines-p))
+				                      tree-guide-truncate-lines-flag))
 
 (defun tree-guide--truncate-lines-teardown ()
   "Tear down line-wrapping configuration for Tree-Guide."
@@ -1253,8 +1253,8 @@ If no region is selected, copy the line containing point."
 
 ;;;; Debugging
 
-(defcustom tree-guide-debug-p nil
-  "If non-nil, print debug messages to a dedicated log buffer.
+(defcustom tree-guide-debug-flag nil
+  "Non-nil means print debug messages to a dedicated log buffer.
 
 The name of the log buffer has the form \"*tree-guide-debug:
 SOURCE-BUFFER*\", where SOURCE-BUFFER is the target buffer containing
@@ -1266,7 +1266,7 @@ the lisp source code."
   "Append a message to the Tree-Guide debug buffer.
 
  The meaning of FORMAT-STRING and ARGS is the same as for `message'."
-  (when tree-guide-debug-p
+  (when tree-guide-debug-flag
     (let* ((source-buffer (current-buffer)))
       (with-current-buffer (get-buffer-create
                             (format "*tree-guide-debug: %s*" source-buffer))
