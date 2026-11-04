@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Ben Vandervalk
 
 ;; Author: Ben Vandervalk <ben.vvalk@gmail.com>
-;; Keywords: lisp, structural editing
+;; Keywords: lisp, convenience
 ;; URL: https://github.com/benvvalk/tree-guide.el
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
