@@ -819,7 +819,7 @@ be omitted."
   (let (result)
     (dolist (range1 range-list1)
       (dolist (range2 range-list2)
-        (when-let* (intersection (tree-guide--range-intersect range1 range2 allow-zero-width-flag))
+        (when-let* ((intersection (tree-guide--range-intersect range1 range2 allow-zero-width-flag)))
           (setq result
                 (tree-guide--sorted-range-list-insert intersection result)))))
     result))
