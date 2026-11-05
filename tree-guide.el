@@ -56,6 +56,7 @@
 ;;;; Imports
 
 (require 'easy-mmode) ; for `define-minor-mode'
+(require 'subr-x)     ; for `if-let*' in Emacs <= 28.2
 
 ;;;; Guide rendering
 ;;
@@ -77,6 +78,15 @@ Top-level sexps have depth 0, children of top-level sexps have depth
 (defcustom tree-guide-face 'shadow
   "The face used to render the tree guide characters."
   :type 'face
+  :group 'tree-guide)
+
+(defcustom tree-guide-debug-flag nil
+  "Non-nil means print debug messages to a dedicated log buffer.
+
+The name of the log buffer has the form \"*tree-guide-debug:
+SOURCE-BUFFER*\", where SOURCE-BUFFER is the target buffer containing
+the lisp source code."
+  :type 'boolean
   :group 'tree-guide)
 
 (defvar tree-guide--guide-char-with-handle "├"
@@ -745,10 +755,10 @@ words, the returned list reuses cons cells from RANGE-LIST."
           ;; If `merge-result' is nil, it means that `merged-range'
           ;; comes after `current-range'. Insert `current-range'
           ;; at current position and continue.
-          (if-let ((merge-result (tree-guide--range-to-markers
-                                  (tree-guide--range-merge
-                                   merged-range
-                                   current-range))))
+          (if-let* ((merge-result (tree-guide--range-to-markers
+                                   (tree-guide--range-merge
+                                    merged-range
+                                    current-range))))
               (setq merged-range merge-result)
             (push current-range result))
           ;; Prepare for next `while' loop iteration.
@@ -954,22 +964,23 @@ were successfully updated without being interrupted by user input."
      "process-updates-while-no-input: no on-screen changes pending, processing off-screen changes")
     (with-current-buffer buffer
       (catch 'done
-        (while (setq change-region (pop tree-guide--change-list))
-          ;; When
-          ;; `tree-guide--update-or-create-overlays-for-change-region'
-          ;; returns a non-nil value for `resume-ranges', it means that
-          ;; line updates were interrupted by user input.
-          (let* ((update-result (tree-guide--update-or-create-overlays-for-change-region change-region))
-                 (interrupted-p (car update-result))
-                 (resume-ranges (cdr update-result)))
-            (dolist (resume-range resume-ranges)
-              (setq tree-guide--change-list
-                    (tree-guide--sorted-range-list-insert
-                     resume-range
-                     tree-guide--change-list)))
-            ;; Return nil to indicate that we were interrupted.
-            (when interrupted-p
-              (throw 'done nil))))
+        (let (change-region)
+          (while (setq change-region (pop tree-guide--change-list))
+            ;; When
+            ;; `tree-guide--update-or-create-overlays-for-change-region'
+            ;; returns a non-nil value for `resume-ranges', it means that
+            ;; line updates were interrupted by user input.
+            (let* ((update-result (tree-guide--update-or-create-overlays-for-change-region change-region))
+                   (interrupted-p (car update-result))
+                   (resume-ranges (cdr update-result)))
+              (dolist (resume-range resume-ranges)
+                (setq tree-guide--change-list
+                      (tree-guide--sorted-range-list-insert
+                       resume-range
+                       tree-guide--change-list)))
+              ;; Return nil to indicate that we were interrupted.
+              (when interrupted-p
+                (throw 'done nil)))))
         ;; Return t to indicate that we processed all pending
         ;; buffer changes.
         t)
@@ -1131,7 +1142,7 @@ explanation."
   (let ((command-name (symbol-name this-command)))
     (when (seq-find
            (lambda (regexp)
-             (string-match regexp command-name nil t))
+             (string-match-p regexp command-name))
            tree-guide-regexps-for-commands-that-require-visible-indentation)
       (remove-from-invisibility-spec 'tree-guide))))
 
@@ -1252,18 +1263,9 @@ If no region is selected, copy the line containing point."
       (while (<= (point) end)
 	    (push (tree-guide--current-line-with-guides) lines)
 	    (forward-line 1)))
-    (kill-new (mapconcat #'identity (nreverse lines)))))
+    (kill-new (mapconcat #'identity (nreverse lines) ""))))
 
 ;;;; Debugging
-
-(defcustom tree-guide-debug-flag nil
-  "Non-nil means print debug messages to a dedicated log buffer.
-
-The name of the log buffer has the form \"*tree-guide-debug:
-SOURCE-BUFFER*\", where SOURCE-BUFFER is the target buffer containing
-the lisp source code."
-  :type 'boolean
-  :group 'tree-guide)
 
 (defun tree-guide--debug-log (format-string &rest args)
   "Append a message to the Tree-Guide debug buffer.
