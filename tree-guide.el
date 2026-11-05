@@ -1,4 +1,4 @@
-;;; tree-guide.el --- visual guides for editing lisp code  -*- lexical-binding: t -*-
+;;; tree-guide.el --- Visual guides for editing lisp code  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026 Ben Vandervalk
 
@@ -954,7 +954,7 @@ were successfully updated without being interrupted by user input."
      "process-updates-while-no-input: no on-screen changes pending, processing off-screen changes")
     (with-current-buffer buffer
       (catch 'done
-        (while-let ((change-region (pop tree-guide--change-list)))
+        (while (setq change-region (pop tree-guide--change-list))
           ;; When
           ;; `tree-guide--update-or-create-overlays-for-change-region'
           ;; returns a non-nil value for `resume-ranges', it means that
