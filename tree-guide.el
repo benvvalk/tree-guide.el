@@ -803,7 +803,7 @@ words, the returned list reuses cons cells from RANGE-LIST."
 The intersections are returned as a sorted range list."
   (let (result)
     (dolist (current-range range-list)
-      (when-let ((intersection (tree-guide--range-intersect current-range range)))
+      (when-let* ((intersection (tree-guide--range-intersect current-range range)))
         (setq result
               (tree-guide--sorted-range-list-insert intersection result))))
     result))
@@ -819,7 +819,7 @@ be omitted."
   (let (result)
     (dolist (range1 range-list1)
       (dolist (range2 range-list2)
-        (when-let (intersection (tree-guide--range-intersect range1 range2 allow-zero-width-flag))
+        (when-let* (intersection (tree-guide--range-intersect range1 range2 allow-zero-width-flag))
           (setq result
                 (tree-guide--sorted-range-list-insert intersection result)))))
     result))
@@ -1319,7 +1319,7 @@ when Tree-Guide mode is disabled.")
 If there is no saved buffer-local value for VAR, return nil.  To
 distinguish between a value of nil and the absence of a saved value,
 use `tree-guide--saved-local-var-p'."
-  (when-let ((record (assoc var tree-guide--saved-local-vars)))
+  (when-let* ((record (assoc var tree-guide--saved-local-vars)))
     ;; when original variable value was buffer-local
     (when (nth 1 record)
       (nth 2 record))))
@@ -1336,7 +1336,7 @@ use `tree-guide--saved-local-var-p'."
 
 (defun tree-guide--restore-local-var (var)
   "Restore VAR to its previous buffer-local or global value."
-  (when-let ((record (assoc var tree-guide--saved-local-vars)))
+  (when-let* ((record (assoc var tree-guide--saved-local-vars)))
     (let ((var (nth 0 record))
 	      (was-local-p (nth 1 record))
 	      (value (nth 2 record)))
