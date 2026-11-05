@@ -14,7 +14,7 @@ echo "==> Byte compiling tree-guide.el with $(emacs --version | head -n 1) in $t
 emacs --quick \
       --batch \
       --eval "(setq byte-compile-error-on-warn t)" \
-      -f batch-byte-compile \
+      --funcall batch-byte-compile \
       *.el
 
 echo "==> PASS"
