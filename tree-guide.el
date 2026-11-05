@@ -5,6 +5,7 @@
 ;; Author: Ben Vandervalk <ben.vvalk@gmail.com>
 ;; Keywords: lisp, convenience
 ;; URL: https://github.com/benvvalk/tree-guide.el
+;; Package-Requires: ((emacs "27.1"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
