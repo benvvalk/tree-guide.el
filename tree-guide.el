@@ -55,7 +55,7 @@
 
 ;;;; Imports
 
-(require 'easy-mmode) ;; for `define-minor-mode'
+(require 'easy-mmode) ; for `define-minor-mode'
 
 ;;;; Guide rendering
 ;;
