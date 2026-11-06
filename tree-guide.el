@@ -151,6 +151,11 @@ position (i.e. the value returned by `point-max')."
 (defun tree-guide--last-line-at-current-depth-p ()
   "Return non-nil if there is no next sibling line.
 
+The purpose of this function is to decide what type of guide character
+to use for the current line (\"├\" or \"╰\").  We use a different
+guide character for the last line of an expression because it looks
+nicer, and more clearly indicates where the expression ends.
+
 Point should be positioned before the sexp that you want to test.
 Note that this function can return different values for different
 positions of point within the same line.
